@@ -40,7 +40,6 @@ def main():
         LOG.error("Empty process definition.")
         sys.exit(1)
 
-    credentials = pika.PlainCredentials('wfworker', 'wfworker')
     parameters = pika.ConnectionParameters(host="localhost")
 
     connection = pika.BlockingConnection(parameters)
