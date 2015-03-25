@@ -1,0 +1,8 @@
+<?xml version="1.0"?>
+<process name="example1">
+    <sequence>
+        <action participant="participant1">
+        </action>
+        <action participant="participant2" />
+    </sequence>
+</process>
