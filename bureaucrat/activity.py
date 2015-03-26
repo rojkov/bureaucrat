@@ -178,13 +178,14 @@ class Action(Activity):
     def run(self, channel):
         """Start action."""
         Activity.run(self, channel)
-        wi_body = """%s {"activity_id": "%s", "process_id": "%s"}""" % \
+        wi_body = """{"participant": "%s", "activity_id": "%s", "process_id": "%s"}""" % \
                       (self.participant, self.id, self.process.uuid)
         channel.basic_publish(exchange='',
                               routing_key="taskqueue",
                               body=wi_body,
                               properties=pika.BasicProperties(
-                                  delivery_mode=2
+                                  delivery_mode=2,
+                                  content_type='application/x-bureaucrat-workitem'
                               ))
 
     def handle_event(self, event, channel):

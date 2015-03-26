@@ -104,7 +104,6 @@ class Process(object):
         if not os.path.isdir(SNAPSHOT_PATH):
             os.makedirs(SNAPSHOT_PATH)
 
-        tpl = """{"version": "%(version)s", "activities": [%(activities)s]}"""
         snapshot = {
             "version": self.version,
             "activities": [activity.snapshot() for activity in self.activities]

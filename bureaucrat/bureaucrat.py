@@ -1,10 +1,10 @@
 import sys
 import pika
-import json
 import logging
 
 from daemonlib import Daemon
 from process import Process
+from workitem import Workitem
 
 LOG = logging.getLogger(__name__)
 
@@ -36,8 +36,16 @@ class Bureaucrat(Daemon):
         LOG.debug("Method: %r" % method)
         LOG.debug("Header: %r" % header)
         LOG.debug("Handling event with Body: %r" % body)
-        _, body = body.split(" ", 1) # TODO: implemenent better Workitem
-        event = json.loads(body)
+        try:
+            workitem = Workitem('application/x-bureaucrat-workitem')
+            workitem.loads(body)
+        except WorkitemError as err:
+            # Report error and accept message
+            LOG.error("%s" % err)
+            channel.basic_ack(method.delivery_tag)
+            return
+
+        event = workitem._body # TODO: disgusting!
         process = Process.load("/tmp/processes/definition-%s" % \
                                event["process_id"])
         process.resume(event["process_id"])

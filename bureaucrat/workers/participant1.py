@@ -9,10 +9,6 @@ class Worker(BaseWorker):
 
     def handle_task(self, workitem):
         LOG.debug("Workitem: %r" % workitem)
-        wtype, body = workitem.dumps().split(" ", 1)
-        LOG.debug("Body: %s" % body)
-        wi = json.loads(body)
-        wi["type"] = "response"
-        workitem.loads("%s %s" % (wtype, json.dumps(wi)))
+        workitem._body["type"] = "response" # TODO: disgusting!
         return workitem
 
