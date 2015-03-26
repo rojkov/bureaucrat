@@ -51,7 +51,7 @@ class Activity(object):
         """Reset activity's state."""
         raise NotImplemented
 
-    def handle_event(self, event, channel):
+    def handle_event(self, event):
         """Handle event."""
         raise NotImplemented
 
@@ -110,24 +110,24 @@ class Sequence(Activity):
         for child, childstate in zip(self.children, state["children"]):
             child.reset_state(childstate)
 
-    def handle_event(self, event, channel):
+    def handle_event(self, event):
         """Handle event."""
 
-        if not event["activity_id"].startswith(self.id):
+        if not event.workitem.activity_id.startswith(self.id):
             return
 
         for activity in self.children:
 
             LOG.debug("%r iterates over %r" % (self, activity))
             if activity.state != 'completed' and \
-               event["activity_id"].startswith(activity.id):
-                activity.handle_event(event, channel)
+               event.workitem.activity_id.startswith(activity.id):
+                activity.handle_event(event)
                 if activity.state != 'completed':
                     LOG.debug("not completed after handling event: %s" % activity)
                     break
 
             if activity.state == 'ready':
-                activity.run(channel)
+                activity.run(event.channel)
             if activity.state != 'completed':
                 LOG.debug("not completed after running: %s" % activity)
                 break
@@ -188,12 +188,12 @@ class Action(Activity):
                                   content_type='application/x-bureaucrat-workitem'
                               ))
 
-    def handle_event(self, event, channel):
+    def handle_event(self, event):
         """Handle event."""
 
         LOG.debug("%s handles event." % self)
-        if event["activity_id"] == self.id:
-            if event["type"] == 'response':
+        if event.workitem.activity_id == self.id:
+            if event.workitem._body["type"] == 'response':
                 LOG.debug("Got response for action %s" % self.id)
                 self.state = 'completed'
 

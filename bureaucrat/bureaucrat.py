@@ -5,6 +5,7 @@ import logging
 from daemonlib import Daemon
 from process import Process
 from workitem import Workitem
+from event import Event
 
 LOG = logging.getLogger(__name__)
 
@@ -45,11 +46,11 @@ class Bureaucrat(Daemon):
             channel.basic_ack(method.delivery_tag)
             return
 
-        event = workitem._body # TODO: disgusting!
+        event = Event(workitem, channel)
         process = Process.load("/tmp/processes/definition-%s" % \
-                               event["process_id"])
-        process.resume(event["process_id"])
-        process.handle_event(event, channel)
+                               workitem.process_id)
+        process.resume(workitem.process_id)
+        process.handle_event(event)
         channel.basic_ack(method.delivery_tag)
 
     def run(self):

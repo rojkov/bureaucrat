@@ -83,13 +83,13 @@ class Process(object):
                     self.suspend()
                     return
 
-    def handle_event(self, event, channel): # TODO: better to put 'channel' into event?
+    def handle_event(self, event):
         """Handle event in process instance."""
         LOG.debug("Handling event %s in process %s" % (event, self))
 
         for activity in self.activities:
             if activity.state != 'completed':
-                activity.handle_event(event, channel)
+                activity.handle_event(event)
                 if activity.state != 'completed':
                     self.suspend()
                     break
