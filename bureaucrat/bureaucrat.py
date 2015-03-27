@@ -28,7 +28,8 @@ class Bureaucrat(Daemon):
         LOG.debug("Header: %r" % header)
         LOG.debug("Body: %r" % body)
         process = Process.create(body)
-        process.execute(channel)
+        event = Event(channel, 'start')
+        process.handle_event(event)
         channel.basic_ack(method.delivery_tag)
 
     def handle_event(self, channel, method, header, body):
@@ -46,7 +47,9 @@ class Bureaucrat(Daemon):
             channel.basic_ack(method.delivery_tag)
             return
 
-        event = Event(workitem, channel)
+        event = Event(channel, 'response')
+        event.workitem = workitem
+        event.target = workitem.activity_id
         process = Process.load("/tmp/processes/definition-%s" % \
                                workitem.process_id)
         process.resume(workitem.process_id)

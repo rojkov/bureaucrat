@@ -1,6 +1,8 @@
 import logging
 import pika
 
+from event import Event
+
 LOG = logging.getLogger(__name__)
 
 def get_supported_activities():
@@ -36,11 +38,6 @@ class Activity(object):
     def create_from_element(cls, process, element, activity_id):
         """Create an instance from ElementTree.Element."""
         raise NotImplemented
-
-    def run(self, channel):
-        assert self.state == 'ready'
-        LOG.debug("Running %s (%s)", self.__class__.__name__, self)
-        self.state = 'active'
 
     def snapshot(self):
         """Return activity snapshot."""
@@ -84,14 +81,6 @@ class Sequence(Activity):
             el_index = el_index + 1
         return sequence
 
-    def run(self, channel):
-        Activity.run(self, channel)
-        for activity in self.children:
-            if activity.state == 'ready':
-                activity.run(channel)
-            if activity.state != 'completed':
-                break
-
     def snapshot(self):
         """Return activity snapshot."""
         return {
@@ -113,27 +102,30 @@ class Sequence(Activity):
     def handle_event(self, event):
         """Handle event."""
 
-        if not event.workitem.activity_id.startswith(self.id):
-            return
+        if self.state == 'completed':
+            LOG.debug("%r is done already, %r is ignored" % (self, event))
+            return 'ignored'
 
+        if self.state == 'ready' and event.type == 'start':
+            if len(self.children) > 0:
+                self.state = 'active'
+            else:
+                self.state = 'completed'
+                return 'consumed'
+
+        result = 'ignored'
         for activity in self.children:
-
             LOG.debug("%r iterates over %r" % (self, activity))
-            if activity.state != 'completed' and \
-               event.workitem.activity_id.startswith(activity.id):
-                activity.handle_event(event)
-                if activity.state != 'completed':
-                    LOG.debug("not completed after handling event: %s" % activity)
-                    break
-
-            if activity.state == 'ready':
-                activity.run(event.channel)
+            result = activity.handle_event(event)
             if activity.state != 'completed':
-                LOG.debug("not completed after running: %s" % activity)
                 break
+            if result == 'consumed':
+                event = Event(event.channel, 'start')
         else:
-            LOG.debug("Activity list successfully exhausted")
+            LOG.debug("Sequence %s is exhausted" % self)
             self.state = 'completed'
+
+        return result
 
 
 class Action(Activity):
@@ -175,27 +167,36 @@ class Action(Activity):
         assert state["id"] == self.id
         self.state = state["state"]
 
-    def run(self, channel):
-        """Start action."""
-        Activity.run(self, channel)
-        wi_body = """{"participant": "%s", "activity_id": "%s", "process_id": "%s"}""" % \
-                      (self.participant, self.id, self.process.uuid)
-        channel.basic_publish(exchange='',
-                              routing_key="taskqueue",
-                              body=wi_body,
-                              properties=pika.BasicProperties(
-                                  delivery_mode=2,
-                                  content_type='application/x-bureaucrat-workitem'
-                              ))
-
     def handle_event(self, event):
         """Handle event."""
 
-        LOG.debug("%s handles event." % self)
-        if event.workitem.activity_id == self.id:
-            if event.workitem._body["type"] == 'response':
-                LOG.debug("Got response for action %s" % self.id)
-                self.state = 'completed'
+        if self.state == 'completed':
+            LOG.debug("%r is done already, %r is ignored" % (self, event))
+            return 'ignored'
+
+        result = 'ignore'
+        if self.state == 'ready' and event.type == 'start':
+            LOG.debug("Activate participant %s" % self.participant)
+            self.state = 'active'
+            wi_body = """{"participant": "%s", "activity_id": "%s", "process_id": "%s"}""" % \
+                          (self.participant, self.id, self.process.uuid)
+            event.channel.basic_publish(exchange='',
+                                        routing_key="taskqueue",
+                                        body=wi_body,
+                                        properties=pika.BasicProperties(
+                                            delivery_mode=2,
+                                            content_type='application/x-bureaucrat-workitem'
+                                        ))
+            result = 'consumed'
+        elif self.state == 'active' and event.type == 'response' and \
+                event.target == self.id:
+            LOG.debug("Got response for action %s" % self.id)
+            self.state = 'completed'
+            result = 'consumed'
+        else:
+            LOG.debug("%r ignores %r" %(self, event))
+
+        return result
 
 def test():
     LOG.info("Success")

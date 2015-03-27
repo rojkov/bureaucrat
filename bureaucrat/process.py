@@ -72,24 +72,12 @@ class Process(object):
         process.uuid = newid
         return process
 
-    def execute(self, channel):
-        """Execute process instance."""
-        LOG.debug("Executing process %s", self)
-
-        for activity in self.activities:
-            if activity.state == 'ready':
-                activity.run(channel)
-                if activity.state != 'completed':
-                    self.suspend()
-                    return
-
     def handle_event(self, event):
         """Handle event in process instance."""
         LOG.debug("Handling event %s in process %s" % (event, self))
 
         for activity in self.activities:
-            if activity.state != 'completed':
-                activity.handle_event(event)
+            if activity.handle_event(event) == 'consumed':
                 if activity.state != 'completed':
                     self.suspend()
                     break
