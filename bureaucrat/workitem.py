@@ -12,6 +12,19 @@ class WorkitemError(BaseWorkitemError):
 class Workitem(BaseWorkitem):
     """Workitem specific to Bureaucrat."""
 
+    @staticmethod
+    def create(participant, process_id, activity_id):
+        self = Workitem('application/x-bureaucrat-workitem')
+        self.worker_type = participant
+        self._process_id = process_id
+        self._activity_id = activity_id
+        self._body = {
+            "participant": participant,
+            "process_id": process_id,
+            "activity_id": activity_id
+        }
+        return self
+
     def loads(self, blob):
         try:
             self._body = json.loads(blob)

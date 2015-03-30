@@ -1,9 +1,15 @@
 import logging
 import pika
+import sexpdata
+from HTMLParser import HTMLParser
 
 from event import Event
+from workitem import Workitem
 
 LOG = logging.getLogger(__name__)
+
+def is_activity(tag):
+    return tag in ('sequence', 'action', 'switch')
 
 def get_supported_activities():
     """Return list of supported activity types."""
@@ -18,6 +24,10 @@ def create_activity_from_element(process, element, activity_id):
         return Action.create_from_element(process, element, activity_id)
     elif tag == 'sequence':
         return Sequence.create_from_element(process, element, activity_id)
+    elif tag == 'switch':
+        return Switch.create_from_element(process, element, activity_id)
+    else:
+        LOG.error("Unknown tag: %s" % tag)
 
 class Activity(object):
     """Workflow activity."""
@@ -33,6 +43,10 @@ class Activity(object):
     def __str__(self):
         """String representation."""
         return "%s" % self.id
+
+    def __repr__(self):
+        """Instance representation."""
+        return "<%s[%s]>" % (self.__class__.__name__, self)
 
     @classmethod
     def create_from_element(cls, process, element, activity_id):
@@ -55,7 +69,7 @@ class Activity(object):
 class Sequence(Activity):
     """A sequence activity."""
 
-    allowed_child_types = ('action',)
+    allowed_child_types = ('action', 'switch')
 
     def __init__(self):
         """Constructor."""
@@ -127,7 +141,6 @@ class Sequence(Activity):
 
         return result
 
-
 class Action(Activity):
     """An action activity."""
 
@@ -178,14 +191,14 @@ class Action(Activity):
         if self.state == 'ready' and event.type == 'start':
             LOG.debug("Activate participant %s" % self.participant)
             self.state = 'active'
-            wi_body = """{"participant": "%s", "activity_id": "%s", "process_id": "%s"}""" % \
-                          (self.participant, self.id, self.process.uuid)
+            workitem = Workitem.create(self.participant, self.process.uuid,
+                                       self.id)
             event.channel.basic_publish(exchange='',
                                         routing_key="taskqueue",
-                                        body=wi_body,
+                                        body=workitem.dumps(),
                                         properties=pika.BasicProperties(
                                             delivery_mode=2,
-                                            content_type='application/x-bureaucrat-workitem'
+                                            content_type=workitem.mime_type
                                         ))
             result = 'consumed'
         elif self.state == 'active' and event.type == 'response' and \
@@ -195,6 +208,161 @@ class Action(Activity):
             result = 'consumed'
         else:
             LOG.debug("%r ignores %r" %(self, event))
+
+        return result
+
+class Case(object):
+    """Case element of switch activity."""
+
+    def __init__(self, process, element, fei):
+        """Constructor."""
+
+        self.id = fei
+        self.state = 'ready'
+        self.conditions = []
+        self.activities = []
+
+        el_index = 0
+        for child in element:
+            if child.tag == 'condition':
+                html_parser = HTMLParser()
+                self.conditions.append(html_parser.unescape(child.text))
+            elif is_activity(child.tag):
+                self.activities.append(
+                    create_activity_from_element(process, child,
+                                                 "%s_%s" % (fei, el_index)))
+                el_index = el_index + 1
+            else:
+                LOG.error("Unknown element: %s", child.tag)
+
+    def evaluate(self):
+        """Check if conditions are met."""
+
+        for cond in self.conditions:
+            if (eval(cond)):
+                LOG.debug("Condition %s evaluated to True" % cond)
+                return True
+            else:
+                LOG.debug("Condition %s evaluated to False" % cond)
+
+        return False
+
+    def snapshot(self):
+        """Return case snapshot."""
+        return {
+            "id": self.id,
+            "state": self.state,
+            "type": "case",
+            "children": [activity.snapshot() for activity in self.activities]
+        }
+
+    def reset_state(self, state):
+        """Reset case's state."""
+        LOG.debug("Resetting case's state")
+        assert state["type"] == 'case'
+        assert state["id"] == self.id
+        self.state = state["state"]
+        for child, childstate in zip(self.activities, state["children"]):
+            child.reset_state(childstate)
+
+    def handle_event(self, event):
+        """Handle event."""
+
+        if self.state == 'completed':
+            LOG.debug("%r is done already, %r is ignored" % (self, event))
+            return 'ignored'
+
+        if self.state == 'ready' and not self.evaluate():
+            LOG.debug("Conditions for %r don't hold", self)
+            return 'ignored'
+
+        if self.state == 'ready' and event.type == 'start':
+            if len(self.activities) > 0:
+                self.state = 'active'
+            else:
+                self.state = 'completed'
+                return 'consumed'
+
+        result = 'ignored'
+        for activity in self.activities:
+            LOG.debug("%r iterates over %r" % (self, activity))
+            result = activity.handle_event(event)
+            if activity.state != 'completed':
+                break
+            if result == 'consumed':
+                event = Event(event.channel, 'start')
+        else:
+            LOG.debug("Case %s is exhausted" % self)
+            self.state = 'completed'
+
+        return result
+
+class Switch(Activity):
+    """Switch activity."""
+
+    def __init__(self):
+        """Constructor."""
+        Activity.__init__(self)
+        self.cases = []
+
+    @classmethod
+    def create_from_element(cls, process, element, activity_id):
+        """Create an instance from ElementTree.Element."""
+        assert element.tag == 'switch'
+        LOG.debug("Creating switch")
+
+        switch = Switch()
+        switch.id = activity_id
+        switch.process = process
+        el_index = 0
+        for child in element:
+            assert child.tag in 'case'
+            case = Case(process, child, "%s_%d" % (activity_id, el_index))
+            switch.cases.append(case)
+            el_index = el_index + 1
+        return switch
+
+    def snapshot(self):
+        """Return switch snapshot."""
+        return {
+            "id": self.id,
+            "state": self.state,
+            "type": "switch",
+            "cases": [case.snapshot() for case in self.cases]
+        }
+
+    def reset_state(self, state):
+        """Reset switch's state."""
+        LOG.debug("Resetting switch's state")
+        assert state["type"] == 'switch'
+        assert state["id"] == self.id
+        self.state = state["state"]
+        for child, childstate in zip(self.cases, state["cases"]):
+            child.reset_state(childstate)
+
+    def handle_event(self, event):
+        """Handle event."""
+
+        if self.state == 'completed':
+            LOG.debug("%r is done already, %r is ignored" % (self, event))
+            return 'ignored'
+
+        if self.state == 'ready' and event.type == 'start':
+            if len(self.cases) > 0:
+                self.state = 'active'
+            else:
+                self.state = 'completed'
+                return 'consumed'
+
+        result = 'ignored'
+        for case in self.cases:
+            LOG.debug("%r iterates over %r" % (self, case))
+            result = case.handle_event(event)
+            if case.state == 'completed':
+                assert result == 'consumed'
+                self.state = 'completed'
+            if result == 'consumed':
+                break
 
         return result
 

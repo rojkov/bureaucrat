@@ -15,4 +15,8 @@ class Event(object):
     def __str__(self):
         """String representation of event."""
 
-        return "%s [%s]" % (self.target, self.type)
+        return "%s,%s" % (self.type, self.target)
+
+    def __repr__(self):
+        """Stringified instance."""
+        return "<%s[%s]>" % (self.__class__.__name__, self)

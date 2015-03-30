@@ -14,7 +14,11 @@ setup(
     keywords = "workflow",
     url = "http://packages.python.org/an_example_pypi_project",
     packages = ['bureaucrat', 'bureaucrat.workers'],
-    install_requires = [],
+    install_requires = [
+        'pika>=0.9.5',
+        'python-daemon>=1.5.5',
+        'sexpdata>=0.0.3'
+    ],
     long_description=read('README.rst'),
     classifiers=[
         "Development Status :: 3 - Alpha",

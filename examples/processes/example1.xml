@@ -1,8 +1,19 @@
 <?xml version="1.0"?>
 <process name="example1">
     <sequence>
-        <action participant="participant1">
-        </action>
+        <action participant="participant1" />
         <action participant="participant2" />
+        <switch>
+            <case>
+                <condition>1 &gt; 2</condition>
+                <action participant="participant1"></action>
+                <action participant="participant2"></action>
+            </case>
+            <case>
+                <condition>True</condition>
+                <action participant="participant1"></action>
+                <action participant="participant2"></action>
+            </case>
+        </switch>
     </sequence>
 </process>
