@@ -4,8 +4,8 @@ import json
 import os.path
 import os
 import xml.etree.ElementTree as ET
-from flowexpression import get_supported_activities
-from flowexpression import create_activity_from_element
+from flowexpression import get_supported_flowexpressions
+from flowexpression import create_fe_from_element
 
 LOG = logging.getLogger(__name__)
 
@@ -46,10 +46,9 @@ class Process(object):
             tag = element.tag
             LOG.debug("Looking into %s" % tag)
 
-            if tag in get_supported_activities():
+            if tag in get_supported_flowexpressions():
                 process.activities.append(
-                    create_activity_from_element(process, element,
-                                                 "%d" % el_index))
+                    create_fe_from_element(process, element, "%d" % el_index))
                 el_index = el_index + 1
             else:
                 LOG.warning("Unknown element: %s", tag)

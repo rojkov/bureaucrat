@@ -11,34 +11,53 @@ LOG = logging.getLogger(__name__)
 def is_activity(tag):
     return tag in ('sequence', 'action', 'switch')
 
-def get_supported_activities():
-    """Return list of supported activity types."""
+def get_supported_flowexpressions():
+    """Return list of supported types of flow expressions."""
     # TODO: calculate supported activities dynamically and cache
-    return ('action', 'sequence')
+    return ('action', 'sequence', 'switch')
 
-def create_activity_from_element(parent, element, activity_id):
-    """Create an activity instance from ElementTree.Element."""
+def create_fe_from_element(parent, element, fei):
+    """Create a flow expression instance from ElementTree.Element."""
 
     tag = element.tag
     if tag == 'action':
-        return Action(parent, element, activity_id)
+        return Action(parent, element, fei)
     elif tag == 'sequence':
-        return Sequence(parent, element, activity_id)
+        return Sequence(parent, element, fei)
     elif tag == 'switch':
-        return Switch(parent, element, activity_id)
+        return Switch(parent, element, fei)
+    elif tag == 'case':
+        return Case(parent, element, fei)
     else:
         LOG.error("Unknown tag: %s" % tag)
 
-class Activity(object):
-    """Workflow activity."""
+class FlowExpression(object):
+    """Flow expression."""
 
     states = ('ready', 'active', 'completed')
+    allowed_child_types = ()
 
-    def __init__(self, parent, element, activity_id):
+    def __init__(self, parent, element, fei):
         """Constructor."""
+
+        self.fe_name = self.__class__.__name__.lower()
+        assert element.tag == self.fe_name
+        LOG.debug("Creating %s" % self.fe_name)
+
         self.state = 'ready'
-        self.id = activity_id
+        self.id = fei
         self.parent = parent
+        self.children = []
+
+        if len(self.allowed_child_types) == 0:
+            return
+
+        el_index = 0
+        for child in element:
+            assert child.tag in self.allowed_child_types
+            fe = create_fe_from_element(self, child, "%s_%d" % (fei, el_index))
+            self.children.append(fe)
+            el_index = el_index + 1
 
     def __str__(self):
         """String representation."""
@@ -49,58 +68,31 @@ class Activity(object):
         return "<%s[%s]>" % (self.__class__.__name__, self)
 
     def snapshot(self):
-        """Return activity snapshot."""
-        # TODO: move common code to this base class
-        raise NotImplemented
+        """Return flow expression snapshot."""
+        return {
+            "id": self.id,
+            "state": self.state,
+            "type": self.fe_name,
+            "children": [child.snapshot() for child in self.children]
+        }
 
     def reset_state(self, state):
         """Reset activity's state."""
-        raise NotImplemented
+        LOG.debug("Resetting %s's state" % self.fe_name)
+        assert state["type"] == self.fe_name
+        assert state["id"] == self.id
+        self.state = state["state"]
+        for child, childstate in zip(self.children, state["children"]):
+            child.reset_state(childstate)
 
     def handle_event(self, event):
         """Handle event."""
         raise NotImplemented
 
-class Sequence(Activity):
+class Sequence(FlowExpression):
     """A sequence activity."""
 
-    allowed_child_types = ('action', 'switch')
-
-    # TODO: move to superclass?
-    def __init__(self, parent, element, activity_id):
-        """Constructor."""
-
-        assert element.tag == 'sequence'
-        LOG.debug("Creating sequence")
-        Activity.__init__(self, parent, element, activity_id)
-
-        self.children = []
-
-        el_index = 0
-        for child in element:
-            assert child.tag in self.allowed_child_types
-            activity = create_activity_from_element(self, child, "%s_%d" % \
-                                                    (activity_id, el_index))
-            self.children.append(activity)
-            el_index = el_index + 1
-
-    def snapshot(self):
-        """Return activity snapshot."""
-        return {
-            "id": self.id,
-            "state": self.state,
-            "type": "sequence",
-            "children": [activity.snapshot() for activity in self.children]
-        }
-
-    def reset_state(self, state):
-        """Reset sequence's state."""
-        LOG.debug("Resetting sequence's state")
-        assert state["type"] == 'sequence'
-        assert state["id"] == self.id
-        self.state = state["state"]
-        for child, childstate in zip(self.children, state["children"]):
-            child.reset_state(childstate)
+    allowed_child_types = ('action', 'switch', 'sequence')
 
     def handle_event(self, event):
         """Handle event."""
@@ -146,36 +138,18 @@ class Sequence(Activity):
 
         return 'ignored'
 
-
-class Action(Activity):
+class Action(FlowExpression):
     """An action activity."""
 
-    def __init__(self, parent, element, activity_id):
+    def __init__(self, parent, element, fei):
         """Constructor."""
 
-        assert element.tag == 'action'
-        LOG.debug("Creating action")
-        Activity.__init__(self, parent, element, activity_id)
+        FlowExpression.__init__(self, parent, element, fei)
         self.participant = element.attrib["participant"]
 
     def __str__(self):
         """String representation."""
         return "%s-%s" % (self.participant, self.id)
-
-    def snapshot(self):
-        """Return activity snapshot."""
-        return {
-            "id": self.id,
-            "state": self.state,
-            "type": "action"
-        }
-
-    def reset_state(self, state):
-        """Reset action's state."""
-        LOG.debug("Resetting action's state")
-        assert state["type"] == 'action'
-        assert state["id"] == self.id
-        self.state = state["state"]
 
     def handle_event(self, event):
         """Handle event."""
@@ -208,16 +182,19 @@ class Action(Activity):
 
         return result
 
-class Case(object):
+class Case(FlowExpression):
     """Case element of switch activity."""
+
+    allowed_child_types = ('action', 'sequence', 'switch')
 
     def __init__(self, parent, element, fei):
         """Constructor."""
 
+        self.fe_name = self.__class__.__name__.lower()
         self.id = fei
         self.state = 'ready'
         self.conditions = []
-        self.activities = []
+        self.children = []
         self.parent = parent
 
         el_index = 0
@@ -226,17 +203,12 @@ class Case(object):
                 html_parser = HTMLParser()
                 self.conditions.append(html_parser.unescape(child.text))
             elif is_activity(child.tag):
-                self.activities.append(
-                    create_activity_from_element(self, child,
-                                                 "%s_%s" % (fei, el_index)))
+                self.children.append(
+                    create_fe_from_element(self, child,
+                                           "%s_%s" % (fei, el_index)))
                 el_index = el_index + 1
             else:
                 LOG.error("Unknown element: %s", child.tag)
-
-    # TODO: drop it
-    def __repr__(self):
-        """Instance representation."""
-        return "<%s[%s]>" % (self.__class__.__name__, self.id)
 
     def evaluate(self):
         """Check if conditions are met."""
@@ -249,24 +221,6 @@ class Case(object):
                 LOG.debug("Condition %s evaluated to False" % cond)
 
         return False
-
-    def snapshot(self):
-        """Return case snapshot."""
-        return {
-            "id": self.id,
-            "state": self.state,
-            "type": "case",
-            "children": [activity.snapshot() for activity in self.activities]
-        }
-
-    def reset_state(self, state):
-        """Reset case's state."""
-        LOG.debug("Resetting case's state")
-        assert state["type"] == 'case'
-        assert state["id"] == self.id
-        self.state = state["state"]
-        for child, childstate in zip(self.activities, state["children"]):
-            child.reset_state(childstate)
 
     def handle_event(self, event):
         """Handle event."""
@@ -282,9 +236,9 @@ class Case(object):
 
         if self.state == 'active' and event.name == 'completed' \
                                   and event.target == self.id:
-            for index, child in zip(range(0, len(self.activities)), self.activities):
+            for index, child in zip(range(0, len(self.children)), self.children):
                 if child.id == event.workitem.fei:
-                    if (index + 1) < len(self.activities):
+                    if (index + 1) < len(self.children):
                         event.target = "%s_%d" % (self.id, index + 1)
                         event.workitem.event_name = 'start'
                         event.workitem.fei = self.id
@@ -293,7 +247,7 @@ class Case(object):
                         event.target = self.parent.id
                         event.workitem.event_name = 'completed'
                         event.workitem.fei = self.id
-                    LOG.debug("Trigger %r to continue from %r. Activities total: %d" % (event, self, len(self.activities)))
+                    LOG.debug("Trigger %r to continue from %r. Activities total: %d" % (event, self, len(self.children)))
                     event.trigger()
                     return 'consumed'
             else:
@@ -306,57 +260,26 @@ class Case(object):
                 LOG.debug("Conditions for %r don't hold", self)
                 return 'ignored'
 
-            if len(self.activities) > 0:
+            if len(self.children) > 0:
                 self.state = 'active'
-                event.target = self.activities[0].id
+                event.target = self.children[0].id
                 LOG.debug("Start handling event in children")
                 event.trigger()
             else:
                 self.state = 'completed'
             return 'consumed'
 
-        for child in self.activities:
+        for child in self.children:
             if child.handle_event(event) == 'consumed':
                 return 'consumed'
 
         LOG.debug("%r was ignored in %r" % (event, self))
         return 'ignored'
 
-class Switch(Activity):
+class Switch(FlowExpression):
     """Switch activity."""
 
-    def __init__(self, parent, element, activity_id):
-        """Constructor."""
-
-        assert element.tag == 'switch'
-        LOG.debug("Creating switch")
-        Activity.__init__(self, parent, element, activity_id)
-        self.cases = []
-
-        el_index = 0
-        for child in element:
-            assert child.tag in 'case'
-            case = Case(self, child, "%s_%d" % (activity_id, el_index))
-            self.cases.append(case)
-            el_index = el_index + 1
-
-    def snapshot(self):
-        """Return switch snapshot."""
-        return {
-            "id": self.id,
-            "state": self.state,
-            "type": "switch",
-            "cases": [case.snapshot() for case in self.cases]
-        }
-
-    def reset_state(self, state):
-        """Reset switch's state."""
-        LOG.debug("Resetting switch's state")
-        assert state["type"] == 'switch'
-        assert state["id"] == self.id
-        self.state = state["state"]
-        for child, childstate in zip(self.cases, state["cases"]):
-            child.reset_state(childstate)
+    allowed_child_types = ('case', )
 
     def handle_event(self, event):
         """Handle event."""
@@ -380,7 +303,7 @@ class Switch(Activity):
 
         if self.state == 'ready' and event.name == 'start' \
                                  and event.target == self.id:
-            for case in self.cases:
+            for case in self.children:
                 if case.evaluate():
                     self.state = 'active'
                     event.target = case.id
@@ -392,7 +315,7 @@ class Switch(Activity):
                 self.state = 'completed'
             return 'consumed'
 
-        for child in self.cases:
+        for child in self.children:
             if child.handle_event(event) == 'consumed':
                 return 'consumed'
 
