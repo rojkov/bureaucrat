@@ -4,8 +4,8 @@ import json
 import os.path
 import os
 import xml.etree.ElementTree as ET
-from activity import get_supported_activities
-from activity import create_activity_from_element
+from flowexpression import get_supported_activities
+from flowexpression import create_activity_from_element
 
 LOG = logging.getLogger(__name__)
 
