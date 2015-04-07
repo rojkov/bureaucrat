@@ -9,6 +9,5 @@ class Worker(BaseWorker):
 
     def handle_task(self, workitem):
         LOG.debug("Workitem: %r" % workitem)
-        workitem._body["type"] = "response" # TODO: disgusting!
         return workitem
 

@@ -16,16 +16,16 @@ def get_supported_activities():
     # TODO: calculate supported activities dynamically and cache
     return ('action', 'sequence')
 
-def create_activity_from_element(process, element, activity_id):
+def create_activity_from_element(parent, element, activity_id):
     """Create an activity instance from ElementTree.Element."""
 
     tag = element.tag
     if tag == 'action':
-        return Action.create_from_element(process, element, activity_id)
+        return Action(parent, element, activity_id)
     elif tag == 'sequence':
-        return Sequence.create_from_element(process, element, activity_id)
+        return Sequence(parent, element, activity_id)
     elif tag == 'switch':
-        return Switch.create_from_element(process, element, activity_id)
+        return Switch(parent, element, activity_id)
     else:
         LOG.error("Unknown tag: %s" % tag)
 
@@ -34,11 +34,11 @@ class Activity(object):
 
     states = ('ready', 'active', 'completed')
 
-    def __init__(self):
+    def __init__(self, parent, element, activity_id):
         """Constructor."""
         self.state = 'ready'
-        self.id = None
-        self.process = None
+        self.id = activity_id
+        self.parent = parent
 
     def __str__(self):
         """String representation."""
@@ -47,11 +47,6 @@ class Activity(object):
     def __repr__(self):
         """Instance representation."""
         return "<%s[%s]>" % (self.__class__.__name__, self)
-
-    @classmethod
-    def create_from_element(cls, process, element, activity_id):
-        """Create an instance from ElementTree.Element."""
-        raise NotImplemented
 
     def snapshot(self):
         """Return activity snapshot."""
@@ -71,29 +66,23 @@ class Sequence(Activity):
 
     allowed_child_types = ('action', 'switch')
 
-    def __init__(self):
+    # TODO: move to superclass?
+    def __init__(self, parent, element, activity_id):
         """Constructor."""
-        Activity.__init__(self)
-        self.children = []
 
-    @classmethod
-    def create_from_element(cls, process, element, activity_id):
-        """Create an instance from ElementTree.Element."""
         assert element.tag == 'sequence'
         LOG.debug("Creating sequence")
+        Activity.__init__(self, parent, element, activity_id)
 
-        sequence = Sequence()
-        sequence.id = activity_id
-        sequence.process = process
+        self.children = []
+
         el_index = 0
         for child in element:
-            assert child.tag in cls.allowed_child_types
-            activity = create_activity_from_element(process,
-                                                    child, "%s_%d" % \
+            assert child.tag in self.allowed_child_types
+            activity = create_activity_from_element(self, child, "%s_%d" % \
                                                     (activity_id, el_index))
-            sequence.children.append(activity)
+            self.children.append(activity)
             el_index = el_index + 1
-        return sequence
 
     def snapshot(self):
         """Return activity snapshot."""
@@ -120,50 +109,58 @@ class Sequence(Activity):
             LOG.debug("%r is done already, %r is ignored" % (self, event))
             return 'ignored'
 
-        if self.state == 'ready' and event.type == 'start':
+        if event.target is not None and not event.target.startswith(self.id):
+            LOG.debug("%r is not for %r" % (event, self))
+            return 'ignored'
+
+        if self.state == 'active' and event.name == 'completed' \
+                                  and event.target == self.id:
+            for index, child in zip(range(0, len(self.children)), self.children):
+                if child.id == event.workitem.fei:
+                    if (index + 1) < len(self.children):
+                        event.target = "%s_%d" % (self.id, index + 1)
+                        event.workitem.event_name = 'start'
+                        event.workitem.fei = self.id
+                        event.trigger()
+                    else:
+                        self.state = 'completed'
+                        event.target = self.parent.id
+                        event.workitem.event_name = 'completed'
+                        event.workitem.fei = self.id
+                        event.trigger()
+                    return 'consumed'
+
+        if self.state == 'ready' and event.name == 'start' \
+                                 and event.target == self.id:
             if len(self.children) > 0:
                 self.state = 'active'
+                event.target = self.children[0].id
+                event.trigger()
             else:
                 self.state = 'completed'
+            return 'consumed'
+
+        for child in self.children:
+            if child.handle_event(event) == 'consumed':
                 return 'consumed'
 
-        result = 'ignored'
-        for activity in self.children:
-            LOG.debug("%r iterates over %r" % (self, activity))
-            result = activity.handle_event(event)
-            if activity.state != 'completed':
-                break
-            if result == 'consumed':
-                event = Event(event.channel, 'start')
-        else:
-            LOG.debug("Sequence %s is exhausted" % self)
-            self.state = 'completed'
+        return 'ignored'
 
-        return result
 
 class Action(Activity):
     """An action activity."""
 
-    def __init__(self):
+    def __init__(self, parent, element, activity_id):
         """Constructor."""
-        Activity.__init__(self)
-        self.participant = None
+
+        assert element.tag == 'action'
+        LOG.debug("Creating action")
+        Activity.__init__(self, parent, element, activity_id)
+        self.participant = element.attrib["participant"]
 
     def __str__(self):
         """String representation."""
         return "%s-%s" % (self.participant, self.id)
-
-    @staticmethod
-    def create_from_element(process, element, activity_id):
-        """Create an instance from ElementTree.Element."""
-        assert element.tag == 'action'
-        LOG.debug("Creating action")
-
-        action = Action()
-        action.id = activity_id
-        action.process = process
-        action.participant = element.attrib["participant"]
-        return action
 
     def snapshot(self):
         """Return activity snapshot."""
@@ -187,24 +184,24 @@ class Action(Activity):
             LOG.debug("%r is done already, %r is ignored" % (self, event))
             return 'ignored'
 
+        if event.target is not None and event.target != self.id:
+            LOG.debug("%r is not for %r" % (event, self))
+            return 'ignored'
+
         result = 'ignore'
-        if self.state == 'ready' and event.type == 'start':
+        if self.state == 'ready' and event.name == 'start':
             LOG.debug("Activate participant %s" % self.participant)
             self.state = 'active'
-            workitem = Workitem.create(self.participant, self.process.uuid,
-                                       self.id)
-            event.channel.basic_publish(exchange='',
-                                        routing_key="taskqueue",
-                                        body=workitem.dumps(),
-                                        properties=pika.BasicProperties(
-                                            delivery_mode=2,
-                                            content_type=workitem.mime_type
-                                        ))
+            event.elaborate_at(self.participant)
             result = 'consumed'
-        elif self.state == 'active' and event.type == 'response' and \
-                event.target == self.id:
+        elif self.state == 'active' and event.name == 'response':
             LOG.debug("Got response for action %s" % self.id)
             self.state = 'completed'
+            # reply to parent that the child is done
+            event.target = self.parent.id
+            event.workitem.event_name = "completed"
+            event.workitem.fei = self.id
+            event.trigger()
             result = 'consumed'
         else:
             LOG.debug("%r ignores %r" %(self, event))
@@ -214,13 +211,14 @@ class Action(Activity):
 class Case(object):
     """Case element of switch activity."""
 
-    def __init__(self, process, element, fei):
+    def __init__(self, parent, element, fei):
         """Constructor."""
 
         self.id = fei
         self.state = 'ready'
         self.conditions = []
         self.activities = []
+        self.parent = parent
 
         el_index = 0
         for child in element:
@@ -229,11 +227,16 @@ class Case(object):
                 self.conditions.append(html_parser.unescape(child.text))
             elif is_activity(child.tag):
                 self.activities.append(
-                    create_activity_from_element(process, child,
+                    create_activity_from_element(self, child,
                                                  "%s_%s" % (fei, el_index)))
                 el_index = el_index + 1
             else:
                 LOG.error("Unknown element: %s", child.tag)
+
+    # TODO: drop it
+    def __repr__(self):
+        """Instance representation."""
+        return "<%s[%s]>" % (self.__class__.__name__, self.id)
 
     def evaluate(self):
         """Check if conditions are met."""
@@ -267,60 +270,75 @@ class Case(object):
 
     def handle_event(self, event):
         """Handle event."""
+        LOG.debug("handling %r in %r" % (event, self))
 
         if self.state == 'completed':
             LOG.debug("%r is done already, %r is ignored" % (self, event))
             return 'ignored'
 
-        if self.state == 'ready' and not self.evaluate():
-            LOG.debug("Conditions for %r don't hold", self)
+        if event.target is not None and not event.target.startswith(self.id):
+            LOG.debug("%r is not for %r" % (event, self))
             return 'ignored'
 
-        if self.state == 'ready' and event.type == 'start':
+        if self.state == 'active' and event.name == 'completed' \
+                                  and event.target == self.id:
+            for index, child in zip(range(0, len(self.activities)), self.activities):
+                if child.id == event.workitem.fei:
+                    if (index + 1) < len(self.activities):
+                        event.target = "%s_%d" % (self.id, index + 1)
+                        event.workitem.event_name = 'start'
+                        event.workitem.fei = self.id
+                    else:
+                        self.state = 'completed'
+                        event.target = self.parent.id
+                        event.workitem.event_name = 'completed'
+                        event.workitem.fei = self.id
+                    LOG.debug("Trigger %r to continue from %r. Activities total: %d" % (event, self, len(self.activities)))
+                    event.trigger()
+                    return 'consumed'
+            else:
+                LOG.warning("No origin found")
+
+        if self.state == 'ready' and event.name == 'start' \
+                                 and event.target == self.id:
+
+            if not self.evaluate():
+                LOG.debug("Conditions for %r don't hold", self)
+                return 'ignored'
+
             if len(self.activities) > 0:
                 self.state = 'active'
+                event.target = self.activities[0].id
+                LOG.debug("Start handling event in children")
+                event.trigger()
             else:
                 self.state = 'completed'
+            return 'consumed'
+
+        for child in self.activities:
+            if child.handle_event(event) == 'consumed':
                 return 'consumed'
 
-        result = 'ignored'
-        for activity in self.activities:
-            LOG.debug("%r iterates over %r" % (self, activity))
-            result = activity.handle_event(event)
-            if activity.state != 'completed':
-                break
-            if result == 'consumed':
-                event = Event(event.channel, 'start')
-        else:
-            LOG.debug("Case %s is exhausted" % self)
-            self.state = 'completed'
-
-        return result
+        LOG.debug("%r was ignored in %r" % (event, self))
+        return 'ignored'
 
 class Switch(Activity):
     """Switch activity."""
 
-    def __init__(self):
+    def __init__(self, parent, element, activity_id):
         """Constructor."""
-        Activity.__init__(self)
-        self.cases = []
 
-    @classmethod
-    def create_from_element(cls, process, element, activity_id):
-        """Create an instance from ElementTree.Element."""
         assert element.tag == 'switch'
         LOG.debug("Creating switch")
+        Activity.__init__(self, parent, element, activity_id)
+        self.cases = []
 
-        switch = Switch()
-        switch.id = activity_id
-        switch.process = process
         el_index = 0
         for child in element:
             assert child.tag in 'case'
-            case = Case(process, child, "%s_%d" % (activity_id, el_index))
-            switch.cases.append(case)
+            case = Case(self, child, "%s_%d" % (activity_id, el_index))
+            self.cases.append(case)
             el_index = el_index + 1
-        return switch
 
     def snapshot(self):
         """Return switch snapshot."""
@@ -347,24 +365,38 @@ class Switch(Activity):
             LOG.debug("%r is done already, %r is ignored" % (self, event))
             return 'ignored'
 
-        if self.state == 'ready' and event.type == 'start':
-            if len(self.cases) > 0:
-                self.state = 'active'
+        if event.target is not None and not event.target.startswith(self.id):
+            LOG.debug("%r is not for %r" % (event, self))
+            return 'ignored'
+
+        if self.state == 'active' and event.name == 'completed' \
+                                  and event.target == self.id:
+            self.state = 'completed'
+            event.target = self.parent.id
+            event.workitem.event_name = 'completed'
+            event.workitem.fei = self.id
+            event.trigger()
+            return 'consumed'
+
+        if self.state == 'ready' and event.name == 'start' \
+                                 and event.target == self.id:
+            for case in self.cases:
+                if case.evaluate():
+                    self.state = 'active'
+                    event.target = case.id
+                    event.trigger()
+                    break
+                else:
+                    LOG.debug("Condition doesn't hold for %r" % case)
             else:
                 self.state = 'completed'
+            return 'consumed'
+
+        for child in self.cases:
+            if child.handle_event(event) == 'consumed':
                 return 'consumed'
 
-        result = 'ignored'
-        for case in self.cases:
-            LOG.debug("%r iterates over %r" % (self, case))
-            result = case.handle_event(event)
-            if case.state == 'completed':
-                assert result == 'consumed'
-                self.state = 'completed'
-            if result == 'consumed':
-                break
-
-        return result
+        return 'ignored'
 
 def test():
     LOG.info("Success")

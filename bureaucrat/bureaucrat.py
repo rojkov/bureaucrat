@@ -1,6 +1,7 @@
 import sys
 import pika
 import logging
+import traceback
 
 from daemonlib import Daemon
 from process import Process
@@ -8,6 +9,19 @@ from workitem import Workitem
 from event import Event
 
 LOG = logging.getLogger(__name__)
+
+def log_trace(func):
+    """Log traceback before raising exception."""
+    def new_func(*args, **kwargs):
+        try:
+            func(*args, **kwargs)
+        except:
+            exc_type, exc_value, tb = sys.exc_info()
+            for line in traceback.format_tb(tb):
+                LOG.error(line.strip())
+            LOG.error("%s: %s" % (exc_type, exc_value))
+            raise
+    return new_func
 
 class Bureaucrat(Daemon):
     """Bureaucrat daemon."""
@@ -21,17 +35,20 @@ class Bureaucrat(Daemon):
         self.connection = None
         super(Bureaucrat, self).__init__(config)
 
-    def handle_delivery(self, channel, method, header, body):
+    @log_trace
+    def launch_process(self, channel, method, header, body):
         """Handle delivery."""
 
         LOG.debug("Method: %r" % method)
         LOG.debug("Header: %r" % header)
         LOG.debug("Body: %r" % body)
         process = Process.create(body)
-        event = Event(channel, 'start')
+        workitem = Workitem.create(process.uuid, '0', 'start')
+        event = Event(channel, workitem)
         process.handle_event(event)
         channel.basic_ack(method.delivery_tag)
 
+    @log_trace
     def handle_event(self, channel, method, header, body):
         """Handle event."""
 
@@ -39,7 +56,7 @@ class Bureaucrat(Daemon):
         LOG.debug("Header: %r" % header)
         LOG.debug("Handling event with Body: %r" % body)
         try:
-            workitem = Workitem('application/x-bureaucrat-workitem')
+            workitem = Workitem()
             workitem.loads(body)
         except WorkitemError as err:
             # Report error and accept message
@@ -47,12 +64,10 @@ class Bureaucrat(Daemon):
             channel.basic_ack(method.delivery_tag)
             return
 
-        event = Event(channel, 'response')
-        event.workitem = workitem
-        event.target = workitem.activity_id
+        event = Event(channel, workitem)
         process = Process.load("/tmp/processes/definition-%s" % \
-                               workitem.process_id)
-        process.resume(workitem.process_id)
+                               workitem.pid)
+        process.resume(workitem.pid)
         process.handle_event(event)
         channel.basic_ack(method.delivery_tag)
 
@@ -67,7 +82,7 @@ class Bureaucrat(Daemon):
                                    exclusive=False, auto_delete=False)
         self.channel.queue_declare(queue="bureaucrat_events", durable=True,
                                    exclusive=False, auto_delete=False)
-        self.channel.basic_consume(self.handle_delivery, queue="bureaucrat")
+        self.channel.basic_consume(self.launch_process, queue="bureaucrat")
         self.channel.basic_consume(self.handle_event, queue="bureaucrat_events")
         self.channel.start_consuming()
 

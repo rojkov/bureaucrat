@@ -12,6 +12,7 @@ LOG = logging.getLogger(__name__)
 # Path to directory where process snapshots are stored
 SNAPSHOT_PATH = '/tmp/processes'
 
+#TODO: Process is a Flow Expression too (with children and whose children link to their parent)
 class Process(object):
     """This class represents a workflow process that can be instantiated."""
 
@@ -23,6 +24,7 @@ class Process(object):
         self.activities = []
         self.version = 0
         self.state = None
+        self.id = ''
 
     def __str__(self):
         """Return string representation of process."""
@@ -46,7 +48,8 @@ class Process(object):
 
             if tag in get_supported_activities():
                 process.activities.append(
-                    create_activity_from_element(process, element, "%d" % el_index))
+                    create_activity_from_element(process, element,
+                                                 "%d" % el_index))
                 el_index = el_index + 1
             else:
                 LOG.warning("Unknown element: %s", tag)
@@ -76,14 +79,16 @@ class Process(object):
         """Handle event in process instance."""
         LOG.debug("Handling event %s in process %s" % (event, self))
 
-        for activity in self.activities:
-            if activity.handle_event(event) == 'consumed':
-                if activity.state != 'completed':
-                    self.suspend()
-                    break
-        else:
+        if event.target == '' and event.name == 'completed':
             LOG.debug("Process %s is completed" % self)
             self.state = 'completed'
+            self.suspend()
+            return
+
+        for activity in self.activities:
+            if activity.handle_event(event) == 'consumed':
+                self.suspend()
+                break
 
     def suspend(self):
         """Suspend process instance."""

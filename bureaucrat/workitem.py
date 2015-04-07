@@ -12,57 +12,120 @@ class WorkitemError(BaseWorkitemError):
 class Workitem(BaseWorkitem):
     """Workitem specific to Bureaucrat."""
 
+    mime_type = 'application/x-bureaucrat-workitem'
+
     @staticmethod
-    def create(participant, process_id, activity_id):
-        self = Workitem('application/x-bureaucrat-workitem')
-        self.worker_type = participant
-        self._process_id = process_id
-        self._activity_id = activity_id
+    def create(process_id, fei, event_name):
+        self = Workitem()
         self._body = {
-            "participant": participant,
-            "process_id": process_id,
-            "activity_id": activity_id
+            "fei": {
+                "id": fei,
+                "pid": process_id,
+                "event_name": event_name,
+                "target": None,
+                "worker_type": None
+            },
+            "fields": {
+            }
         }
         return self
+
+    def _assert_body(self):
+        """Make sure body is loaded."""
+        if self._body is None:
+            raise WorkitemError("Workitem hasn't been loaded")
 
     def loads(self, blob):
         try:
             self._body = json.loads(blob)
-            self.worker_type = self._body["participant"]
-            self._process_id = self._body["process_id"]
-            self._activity_id = self._body["activity_id"]
-        except (ValueError, KeyError, TypeError):
+            assert self._body["fei"]["id"] is not None
+            assert self._body["fei"]["pid"] is not None
+            assert self._body["fields"] is not None
+        except (ValueError, KeyError, TypeError, AssertionError):
             raise WorkitemError("Can't parse workitem body")
 
     def dumps(self):
-        if self._body is None:
-            raise WorkitemError("Workitem hasn't been loaded")
+        self._assert_body()
         return json.dumps(self._body)
 
     def set_error(self, error):
+        self._assert_body()
         self._body["error"] = error
 
     def set_trace(self, trace):
+        self._assert_body()
         self._body["trace"] = trace
 
     @property
-    def process_id(self):
+    def pid(self):
         """Return process Id this workitem belongs to.
 
         This is a read only property.
         """
 
-        if self._body is None:
-            raise WorkitemError("Workitem hasn't been loaded")
-        return self._process_id
+        self._assert_body()
+        return self._body["fei"]["pid"]
 
     @property
-    def activity_id(self):
-        """Return activity Id this workitem originates from.
+    def fei(self):
+        """Return flow expression ID this workitem originates from."""
 
-        This is a read only property.
-        """
+        self._assert_body()
+        return self._body["fei"]["id"]
 
-        if self._body is None:
-            raise WorkitemError("Workitem hasn't been loaded")
-        return self._activity_id
+    @fei.setter
+    def fei(self, new_origin):
+        self._assert_body()
+        self._body["fei"]["id"] = new_origin
+
+    @property
+    def target(self):
+        """Return flow expression ID this workitem targets to."""
+
+        self._assert_body()
+
+        if self._body["fei"]["target"] is not None:
+            return self._body["fei"]["target"]
+        else:
+            return self._body["fei"]["id"]
+
+    @target.setter
+    def target(self, new_target):
+        """Update workitem's target."""
+
+        self._assert_body()
+        self._body["fei"]["target"] = new_target
+
+    @property
+    def fields(self):
+        """Return workitem's fields accessible by workers."""
+
+        self._assert_body()
+        return self._body["fields"]
+
+    @property
+    def event_name(self):
+        """Return workitem's event name."""
+
+        self._assert_body()
+        return self._body["fei"]["event_name"]
+
+    @event_name.setter
+    def event_name(self, new_name):
+        """Setter for event_name."""
+        self._assert_body()
+        self._body["fei"]["event_name"] = new_name
+
+    @property
+    def worker_type(self):
+        """Return type of worker this workitem was sent to."""
+
+        self._assert_body()
+        return self._body["fei"]["worker_type"]
+
+    @worker_type.setter
+    def worker_type(self, wtype):
+        """Setter for worker_type."""
+
+        self._assert_body()
+        self._body["fei"]["worker_type"] = wtype
