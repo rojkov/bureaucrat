@@ -16,18 +16,18 @@ def get_supported_flowexpressions():
     # TODO: calculate supported activities dynamically and cache
     return ('action', 'sequence', 'switch')
 
-def create_fe_from_element(parent, element, fei):
+def create_fe_from_element(parent_id, element, fei):
     """Create a flow expression instance from ElementTree.Element."""
 
     tag = element.tag
     if tag == 'action':
-        return Action(parent, element, fei)
+        return Action(parent_id, element, fei)
     elif tag == 'sequence':
-        return Sequence(parent, element, fei)
+        return Sequence(parent_id, element, fei)
     elif tag == 'switch':
-        return Switch(parent, element, fei)
+        return Switch(parent_id, element, fei)
     elif tag == 'case':
-        return Case(parent, element, fei)
+        return Case(parent_id, element, fei)
     else:
         LOG.error("Unknown tag: %s" % tag)
 
@@ -37,7 +37,7 @@ class FlowExpression(object):
     states = ('ready', 'active', 'completed')
     allowed_child_types = ()
 
-    def __init__(self, parent, element, fei):
+    def __init__(self, parent_id, element, fei):
         """Constructor."""
 
         self.fe_name = self.__class__.__name__.lower()
@@ -46,7 +46,7 @@ class FlowExpression(object):
 
         self.state = 'ready'
         self.id = fei
-        self.parent = parent
+        self.parent_id = parent_id
         self.children = []
 
         if len(self.allowed_child_types) == 0:
@@ -55,7 +55,7 @@ class FlowExpression(object):
         el_index = 0
         for child in element:
             assert child.tag in self.allowed_child_types
-            fe = create_fe_from_element(self, child, "%s_%d" % (fei, el_index))
+            fe = create_fe_from_element(self.id, child, "%s_%d" % (fei, el_index))
             self.children.append(fe)
             el_index = el_index + 1
 
@@ -116,7 +116,7 @@ class Sequence(FlowExpression):
                         event.trigger()
                     else:
                         self.state = 'completed'
-                        event.target = self.parent.id
+                        event.target = self.parent_id
                         event.workitem.event_name = 'completed'
                         event.workitem.fei = self.id
                         event.trigger()
@@ -141,10 +141,10 @@ class Sequence(FlowExpression):
 class Action(FlowExpression):
     """An action activity."""
 
-    def __init__(self, parent, element, fei):
+    def __init__(self, parent_id, element, fei):
         """Constructor."""
 
-        FlowExpression.__init__(self, parent, element, fei)
+        FlowExpression.__init__(self, parent_id, element, fei)
         self.participant = element.attrib["participant"]
 
     def __str__(self):
@@ -172,7 +172,7 @@ class Action(FlowExpression):
             LOG.debug("Got response for action %s" % self.id)
             self.state = 'completed'
             # reply to parent that the child is done
-            event.target = self.parent.id
+            event.target = self.parent_id
             event.workitem.event_name = "completed"
             event.workitem.fei = self.id
             event.trigger()
@@ -187,7 +187,7 @@ class Case(FlowExpression):
 
     allowed_child_types = ('action', 'sequence', 'switch')
 
-    def __init__(self, parent, element, fei):
+    def __init__(self, parent_id, element, fei):
         """Constructor."""
 
         self.fe_name = self.__class__.__name__.lower()
@@ -195,7 +195,7 @@ class Case(FlowExpression):
         self.state = 'ready'
         self.conditions = []
         self.children = []
-        self.parent = parent
+        self.parent_id = parent_id
 
         el_index = 0
         for child in element:
@@ -204,7 +204,7 @@ class Case(FlowExpression):
                 self.conditions.append(html_parser.unescape(child.text))
             elif is_activity(child.tag):
                 self.children.append(
-                    create_fe_from_element(self, child,
+                    create_fe_from_element(self.id, child,
                                            "%s_%s" % (fei, el_index)))
                 el_index = el_index + 1
             else:
@@ -244,7 +244,7 @@ class Case(FlowExpression):
                         event.workitem.fei = self.id
                     else:
                         self.state = 'completed'
-                        event.target = self.parent.id
+                        event.target = self.parent_id
                         event.workitem.event_name = 'completed'
                         event.workitem.fei = self.id
                     LOG.debug("Trigger %r to continue from %r. Activities total: %d" % (event, self, len(self.children)))
@@ -295,7 +295,7 @@ class Switch(FlowExpression):
         if self.state == 'active' and event.name == 'completed' \
                                   and event.target == self.id:
             self.state = 'completed'
-            event.target = self.parent.id
+            event.target = self.parent_id
             event.workitem.event_name = 'completed'
             event.workitem.fei = self.id
             event.trigger()

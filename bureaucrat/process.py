@@ -24,7 +24,6 @@ class Process(object):
         self.activities = []
         self.version = 0
         self.state = None
-        self.id = ''
 
     def __str__(self):
         """Return string representation of process."""
@@ -48,7 +47,7 @@ class Process(object):
 
             if tag in get_supported_flowexpressions():
                 process.activities.append(
-                    create_fe_from_element(process, element, "%d" % el_index))
+                    create_fe_from_element('', element, "%d" % el_index))
                 el_index = el_index + 1
             else:
                 LOG.warning("Unknown element: %s", tag)
