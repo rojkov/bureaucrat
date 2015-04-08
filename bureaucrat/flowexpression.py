@@ -16,6 +16,9 @@ def get_supported_flowexpressions():
     # TODO: calculate supported activities dynamically and cache
     return ('action', 'sequence', 'switch')
 
+class FlowExpressionError(Exception):
+    pass
+
 def create_fe_from_element(parent_id, element, fei):
     """Create a flow expression instance from ElementTree.Element."""
 
@@ -29,7 +32,7 @@ def create_fe_from_element(parent_id, element, fei):
     elif tag == 'case':
         return Case(parent_id, element, fei)
     else:
-        LOG.error("Unknown tag: %s" % tag)
+        raise FlowExpressionError("Unknown tag: %s" % tag)
 
 class FlowExpression(object):
     """Flow expression."""

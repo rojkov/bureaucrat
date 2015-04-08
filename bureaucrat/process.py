@@ -131,27 +131,3 @@ class Process(object):
             snapshot = json.load(fhdl)
         for child, state in zip(self.children, snapshot['children']):
             child.reset_state(state)
-
-def test():
-    process1 = Process.load('examples/processes/example1.xml')
-    process1.execute()
-    process2 = Process.load('examples/processes/example1.xml')
-    process2.resume(process1.uuid)
-    event1 = {
-        "process_id": process1.uuid,
-        "activity_id": "0_0",
-        "type": "response"
-    }
-    process2.handle_event(event1)
-    LOG.info("process2 state %s", process2.state)
-    event2 = {
-        "process_id": process1.uuid,
-        "activity_id": "0_1",
-        "type": "response"
-    }
-    process2.handle_event(event2)
-    LOG.info("process2 state %s", process2.state)
-
-if __name__ == '__main__':
-    logging.basicConfig(level=logging.DEBUG)
-    test()
