@@ -27,6 +27,10 @@ class Process(object):
         """Return string representation of process."""
         return self.uuid
 
+    def __repr__(self):
+        """Instance representation."""
+        return "<%s[%s]>" % (self.__class__.__name__, self)
+
     @staticmethod
     def load(definition_path):
         """Load a process instance for the given definition."""
@@ -73,7 +77,7 @@ class Process(object):
 
     def handle_event(self, event):
         """Handle event in process instance."""
-        LOG.debug("Handling event %s in process %s" % (event, self))
+        LOG.debug("Handling %r in %r" % (event, self))
 
         if event.name == 'start' and event.target == '':
             if len(self.children) > 0:

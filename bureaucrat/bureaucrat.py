@@ -45,7 +45,8 @@ class Bureaucrat(Daemon):
         process = Process.create(body)
         workitem = Workitem.create(process.uuid, '', 'start')
         event = Event(channel, workitem)
-        process.handle_event(event)
+        if process.handle_event(event):
+            LOG.debug("%r is completed" % process)
         process.suspend()
         channel.basic_ack(method.delivery_tag)
 
@@ -69,7 +70,8 @@ class Bureaucrat(Daemon):
         process = Process.load("/tmp/processes/definition-%s" % \
                                workitem.pid)
         process.resume(workitem.pid)
-        process.handle_event(event)
+        if process.handle_event(event):
+            LOG.debug("%r is completed" % process)
         process.suspend()
         channel.basic_ack(method.delivery_tag)
 
