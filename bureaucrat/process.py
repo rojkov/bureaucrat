@@ -12,7 +12,6 @@ LOG = logging.getLogger(__name__)
 # Path to directory where process snapshots are stored
 SNAPSHOT_PATH = '/tmp/processes'
 
-#TODO: Process is a Flow Expression too (with children and whose children link to their parent)
 class Process(object):
     """This class represents a workflow process that can be instantiated."""
 
@@ -21,9 +20,8 @@ class Process(object):
 
         self.context = None
         self.uuid = None
-        self.activities = []
+        self.children = []
         self.version = 0
-        self.state = None
 
     def __str__(self):
         """Return string representation of process."""
@@ -46,7 +44,7 @@ class Process(object):
             LOG.debug("Looking into %s" % tag)
 
             if tag in get_supported_flowexpressions():
-                process.activities.append(
+                process.children.append(
                     create_fe_from_element('', element, "%d" % el_index))
                 el_index = el_index + 1
             else:
@@ -77,16 +75,31 @@ class Process(object):
         """Handle event in process instance."""
         LOG.debug("Handling event %s in process %s" % (event, self))
 
-        if event.target == '' and event.name == 'completed':
-            LOG.debug("Process %s is completed" % self)
-            self.state = 'completed'
-            self.suspend()
-            return
+        if event.name == 'start' and event.target == '':
+            if len(self.children) > 0:
+                event.target = '0'
+                event.trigger()
+                return False
+            else:
+                return True
 
-        for activity in self.activities:
-            if activity.handle_event(event) == 'consumed':
-                self.suspend()
+        if event.target == '' and event.name == 'completed':
+            for index, child in zip(range(0, len(self.children)), self.children):
+                if child.id == event.workitem.fei:
+                    if (index + 1) < len(self.children):
+                        event.target = "%d" % (index + 1)
+                        event.workitem.event_name = 'start'
+                        event.workitem.fei = ''
+                        event.trigger()
+                        return False
+                    else:
+                        return True
+
+        for child in self.children:
+            if child.handle_event(event) == 'consumed':
                 break
+
+        return False
 
     def suspend(self):
         """Suspend process instance."""
@@ -97,7 +110,7 @@ class Process(object):
 
         snapshot = {
             "version": self.version,
-            "activities": [activity.snapshot() for activity in self.activities]
+            "children": [child.snapshot() for child in self.children]
         }
 
         with open(os.path.join(SNAPSHOT_PATH, "process-%s" % self.uuid),
@@ -112,8 +125,8 @@ class Process(object):
         with open(os.path.join(SNAPSHOT_PATH,
                                "process-%s" % proc_id), 'r') as fhdl:
             snapshot = json.load(fhdl)
-        for activity, state in zip(self.activities, snapshot['activities']):
-            activity.reset_state(state)
+        for child, state in zip(self.children, snapshot['children']):
+            child.reset_state(state)
 
 def test():
     process1 = Process.load('examples/processes/example1.xml')

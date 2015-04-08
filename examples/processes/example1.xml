@@ -16,4 +16,5 @@
             </case>
         </switch>
     </sequence>
+    <action participant="participant1"></action>
 </process>

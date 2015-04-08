@@ -43,9 +43,10 @@ class Bureaucrat(Daemon):
         LOG.debug("Header: %r" % header)
         LOG.debug("Body: %r" % body)
         process = Process.create(body)
-        workitem = Workitem.create(process.uuid, '0', 'start')
+        workitem = Workitem.create(process.uuid, '', 'start')
         event = Event(channel, workitem)
         process.handle_event(event)
+        process.suspend()
         channel.basic_ack(method.delivery_tag)
 
     @log_trace
@@ -69,6 +70,7 @@ class Bureaucrat(Daemon):
                                workitem.pid)
         process.resume(workitem.pid)
         process.handle_event(event)
+        process.suspend()
         channel.basic_ack(method.delivery_tag)
 
     def run(self):

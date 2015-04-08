@@ -112,14 +112,12 @@ class Sequence(FlowExpression):
                     if (index + 1) < len(self.children):
                         event.target = "%s_%d" % (self.id, index + 1)
                         event.workitem.event_name = 'start'
-                        event.workitem.fei = self.id
-                        event.trigger()
                     else:
                         self.state = 'completed'
                         event.target = self.parent_id
                         event.workitem.event_name = 'completed'
-                        event.workitem.fei = self.id
-                        event.trigger()
+                    event.workitem.fei = self.id
+                    event.trigger()
                     return 'consumed'
 
         if self.state == 'ready' and event.name == 'start' \
