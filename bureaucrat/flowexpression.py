@@ -89,6 +89,20 @@ class FlowExpression(object):
         """Handle event."""
         raise NotImplemented
 
+    def _can_be_ignored(self, event):
+        """Check if event can be safely ignored."""
+
+        can_be_ignored = False
+
+        if self.state == 'completed':
+            LOG.debug("%r is done already, %r is ignored" % (self, event))
+            can_be_ignored = True
+        elif event.target is not None and not event.target.startswith(self.id):
+            LOG.debug("%r is not for %r" % (event, self))
+            can_be_ignored = True
+
+        return can_be_ignored
+
 class Sequence(FlowExpression):
     """A sequence activity."""
 
@@ -97,12 +111,7 @@ class Sequence(FlowExpression):
     def handle_event(self, event):
         """Handle event."""
 
-        if self.state == 'completed':
-            LOG.debug("%r is done already, %r is ignored" % (self, event))
-            return 'ignored'
-
-        if event.target is not None and not event.target.startswith(self.id):
-            LOG.debug("%r is not for %r" % (event, self))
+        if self._can_be_ignored(event):
             return 'ignored'
 
         if self.state == 'active' and event.name == 'completed' \
@@ -152,12 +161,7 @@ class Action(FlowExpression):
     def handle_event(self, event):
         """Handle event."""
 
-        if self.state == 'completed':
-            LOG.debug("%r is done already, %r is ignored" % (self, event))
-            return 'ignored'
-
-        if event.target is not None and event.target != self.id:
-            LOG.debug("%r is not for %r" % (event, self))
+        if self._can_be_ignored(event):
             return 'ignored'
 
         result = 'ignore'
@@ -224,12 +228,7 @@ class Case(FlowExpression):
         """Handle event."""
         LOG.debug("handling %r in %r" % (event, self))
 
-        if self.state == 'completed':
-            LOG.debug("%r is done already, %r is ignored" % (self, event))
-            return 'ignored'
-
-        if event.target is not None and not event.target.startswith(self.id):
-            LOG.debug("%r is not for %r" % (event, self))
+        if self._can_be_ignored(event):
             return 'ignored'
 
         if self.state == 'active' and event.name == 'completed' \
@@ -282,12 +281,7 @@ class Switch(FlowExpression):
     def handle_event(self, event):
         """Handle event."""
 
-        if self.state == 'completed':
-            LOG.debug("%r is done already, %r is ignored" % (self, event))
-            return 'ignored'
-
-        if event.target is not None and not event.target.startswith(self.id):
-            LOG.debug("%r is not for %r" % (event, self))
+        if self._can_be_ignored(event):
             return 'ignored'
 
         if self.state == 'active' and event.name == 'completed' \
