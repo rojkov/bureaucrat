@@ -117,7 +117,7 @@ class Sequence(FlowExpression):
         if self.state == 'active' and event.name == 'completed' \
                                   and event.target == self.id:
             for index, child in zip(range(0, len(self.children)), self.children):
-                if child.id == event.workitem.fei:
+                if child.id == event.workitem.origin:
                     if (index + 1) < len(self.children):
                         event.target = "%s_%d" % (self.id, index + 1)
                         event.workitem.event_name = 'start'
@@ -125,7 +125,7 @@ class Sequence(FlowExpression):
                         self.state = 'completed'
                         event.target = self.parent_id
                         event.workitem.event_name = 'completed'
-                    event.workitem.fei = self.id
+                    event.workitem.origin = self.id
                     event.trigger()
                     return 'consumed'
 
@@ -176,7 +176,7 @@ class Action(FlowExpression):
             # reply to parent that the child is done
             event.target = self.parent_id
             event.workitem.event_name = "completed"
-            event.workitem.fei = self.id
+            event.workitem.origin = self.id
             event.trigger()
             result = 'consumed'
         else:
@@ -234,16 +234,16 @@ class Case(FlowExpression):
         if self.state == 'active' and event.name == 'completed' \
                                   and event.target == self.id:
             for index, child in zip(range(0, len(self.children)), self.children):
-                if child.id == event.workitem.fei:
+                if child.id == event.workitem.origin:
                     if (index + 1) < len(self.children):
                         event.target = "%s_%d" % (self.id, index + 1)
                         event.workitem.event_name = 'start'
-                        event.workitem.fei = self.id
+                        event.workitem.origin = self.id
                     else:
                         self.state = 'completed'
                         event.target = self.parent_id
                         event.workitem.event_name = 'completed'
-                        event.workitem.fei = self.id
+                        event.workitem.origin = self.id
                     LOG.debug("Trigger %r to continue from %r. Activities total: %d" % (event, self, len(self.children)))
                     event.trigger()
                     return 'consumed'
@@ -289,7 +289,7 @@ class Switch(FlowExpression):
             self.state = 'completed'
             event.target = self.parent_id
             event.workitem.event_name = 'completed'
-            event.workitem.fei = self.id
+            event.workitem.origin = self.id
             event.trigger()
             return 'consumed'
 

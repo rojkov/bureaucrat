@@ -43,7 +43,7 @@ class Bureaucrat(Daemon):
         LOG.debug("Header: %r" % header)
         LOG.debug("Body: %r" % body)
         process = Process.create(body)
-        workitem = Workitem.create(process.uuid, '', 'start')
+        workitem = Workitem.create(process.uuid, 'start')
         event = Event(channel, workitem)
         if process.handle_event(event):
             LOG.debug("%r is completed" % process)

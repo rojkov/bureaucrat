@@ -89,11 +89,11 @@ class Process(object):
 
         if event.target == '' and event.name == 'completed':
             for index, child in zip(range(0, len(self.children)), self.children):
-                if child.id == event.workitem.fei:
+                if child.id == event.workitem.origin:
                     if (index + 1) < len(self.children):
                         event.target = "%d" % (index + 1)
                         event.workitem.event_name = 'start'
-                        event.workitem.fei = ''
+                        event.workitem.origin = ''
                         event.trigger()
                         return False
                     else:

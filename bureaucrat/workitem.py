@@ -15,14 +15,14 @@ class Workitem(BaseWorkitem):
     mime_type = 'application/x-bureaucrat-workitem'
 
     @staticmethod
-    def create(process_id, fei, event_name):
+    def create(process_id, event_name):
         self = Workitem()
         self._body = {
             "fei": {
-                "id": fei,
+                "origin": '',
                 "pid": process_id,
                 "event_name": event_name,
-                "target": None,
+                "target": '',
                 "worker_type": None
             },
             "fields": {
@@ -38,7 +38,7 @@ class Workitem(BaseWorkitem):
     def loads(self, blob):
         try:
             self._body = json.loads(blob)
-            assert self._body["fei"]["id"] is not None
+            assert self._body["fei"]["origin"] is not None
             assert self._body["fei"]["pid"] is not None
             assert self._body["fields"] is not None
         except (ValueError, KeyError, TypeError, AssertionError):
@@ -67,27 +67,23 @@ class Workitem(BaseWorkitem):
         return self._body["fei"]["pid"]
 
     @property
-    def fei(self):
+    def origin(self):
         """Return flow expression ID this workitem originates from."""
 
         self._assert_body()
-        return self._body["fei"]["id"]
+        return self._body["fei"]["origin"]
 
-    @fei.setter
-    def fei(self, new_origin):
+    @origin.setter
+    def origin(self, new_origin):
         self._assert_body()
-        self._body["fei"]["id"] = new_origin
+        self._body["fei"]["origin"] = new_origin
 
     @property
     def target(self):
         """Return flow expression ID this workitem targets to."""
 
         self._assert_body()
-
-        if self._body["fei"]["target"] is not None:
-            return self._body["fei"]["target"]
-        else:
-            return self._body["fei"]["id"]
+        return self._body["fei"]["target"]
 
     @target.setter
     def target(self, new_target):
