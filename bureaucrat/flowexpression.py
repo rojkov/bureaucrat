@@ -9,12 +9,12 @@ from workitem import Workitem
 LOG = logging.getLogger(__name__)
 
 def is_activity(tag):
-    return tag in ('sequence', 'action', 'switch', 'while')
+    return tag in ('sequence', 'action', 'switch', 'while', 'all')
 
 def get_supported_flowexpressions():
     """Return list of supported types of flow expressions."""
     # TODO: calculate supported activities dynamically and cache
-    return ('action', 'sequence', 'switch', 'while')
+    return ('action', 'sequence', 'switch', 'while', 'all')
 
 class FlowExpressionError(Exception):
     pass
@@ -130,7 +130,7 @@ class FlowExpression(object):
 class Sequence(FlowExpression):
     """A sequence activity."""
 
-    allowed_child_types = ('action', 'switch', 'sequence', 'while')
+    allowed_child_types = ('action', 'switch', 'sequence', 'while', 'all')
 
     def handle_event(self, event):
         """Handle event."""
@@ -214,7 +214,7 @@ class CaseError(FlowExpressionError):
 class Case(FlowExpression):
     """Case element of switch activity."""
 
-    allowed_child_types = ('action', 'sequence', 'switch', 'while')
+    allowed_child_types = ('action', 'sequence', 'switch', 'while', 'all')
 
     def __init__(self, parent_id, element, fei):
         """Constructor."""
@@ -342,7 +342,7 @@ class WhileError(FlowExpressionError):
 class While(FlowExpression):
     """While activity."""
 
-    allowed_child_types = ('action', 'switch', 'sequence', 'while')
+    allowed_child_types = ('action', 'switch', 'sequence', 'while', 'all')
 
     def __init__(self, parent_id, element, fei):
         """Constructor."""
@@ -423,6 +423,21 @@ class While(FlowExpression):
                     return 'consumed'
             else:
                 LOG.warning("No origin found")
+
+        for child in self.children:
+            if child.handle_event(event) == 'consumed':
+                return 'consumed'
+
+class All(FlowExpression):
+    """All activity."""
+
+    allowed_child_types = ('action', 'switch', 'sequence', 'while', 'all')
+
+    def handle_event(self, event):
+        """Handle event."""
+
+        if self._can_be_ignored(event):
+            return 'ignored'
 
         for child in self.children:
             if child.handle_event(event) == 'consumed':

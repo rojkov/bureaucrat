@@ -20,13 +20,8 @@ processdsc_false = """<?xml version="1.0"?>
 </while>
 """
 
-processdsc_empty = """<?xml version="1.0"?>
-<while>
-    <condition>True</condition>
-</while>
-"""
-
 class TestWhile(unittest.TestCase):
+    """Tests for While activity."""
 
     processdsc = processdsc_true
 
