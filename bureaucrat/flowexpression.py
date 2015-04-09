@@ -9,12 +9,12 @@ from workitem import Workitem
 LOG = logging.getLogger(__name__)
 
 def is_activity(tag):
-    return tag in ('sequence', 'action', 'switch')
+    return tag in ('sequence', 'action', 'switch', 'while')
 
 def get_supported_flowexpressions():
     """Return list of supported types of flow expressions."""
     # TODO: calculate supported activities dynamically and cache
-    return ('action', 'sequence', 'switch')
+    return ('action', 'sequence', 'switch', 'while')
 
 class FlowExpressionError(Exception):
     pass
@@ -31,6 +31,8 @@ def create_fe_from_element(parent_id, element, fei):
         return Switch(parent_id, element, fei)
     elif tag == 'case':
         return Case(parent_id, element, fei)
+    elif tag == 'while':
+        return While(parent_id, element, fei)
     else:
         raise FlowExpressionError("Unknown tag: %s" % tag)
 
@@ -57,10 +59,13 @@ class FlowExpression(object):
 
         el_index = 0
         for child in element:
-            assert child.tag in self.allowed_child_types
-            fe = create_fe_from_element(self.id, child, "%s_%d" % (fei, el_index))
-            self.children.append(fe)
-            el_index = el_index + 1
+            if child.tag in self.allowed_child_types:
+                fe = create_fe_from_element(self.id, child,
+                                            "%s_%d" % (fei, el_index))
+                self.children.append(fe)
+                el_index = el_index + 1
+            else:
+                self.parse_non_child(child)
 
     def __str__(self):
         """String representation."""
@@ -69,6 +74,15 @@ class FlowExpression(object):
     def __repr__(self):
         """Instance representation."""
         return "<%s[%s]>" % (self.__class__.__name__, self)
+
+    def parse_non_child(self, element):
+        """Parse disallowed child element.
+
+        Some flow expressions can contain child elements in their definition
+        which are just attributes of them, not other flow expression.
+        As an example consider <condition> inside <case>.
+        """
+        raise FlowExpressionError("'%s' is disallowed child type" % element.tag)
 
     def snapshot(self):
         """Return flow expression snapshot."""
@@ -106,10 +120,17 @@ class FlowExpression(object):
 
         return can_be_ignored
 
+    def reset_children(self):
+        """Reset children state to ready."""
+
+        for child in self.children:
+            child.state = 'ready'
+            child.reset_children()
+
 class Sequence(FlowExpression):
     """A sequence activity."""
 
-    allowed_child_types = ('action', 'switch', 'sequence')
+    allowed_child_types = ('action', 'switch', 'sequence', 'while')
 
     def handle_event(self, event):
         """Handle event."""
@@ -187,39 +208,34 @@ class Action(FlowExpression):
 
         return result
 
+class CaseError(FlowExpressionError):
+    pass
+
 class Case(FlowExpression):
     """Case element of switch activity."""
 
-    allowed_child_types = ('action', 'sequence', 'switch')
+    allowed_child_types = ('action', 'sequence', 'switch', 'while')
 
     def __init__(self, parent_id, element, fei):
         """Constructor."""
 
-        self.fe_name = self.__class__.__name__.lower()
-        self.id = fei
-        self.state = 'ready'
         self.conditions = []
-        self.children = []
-        self.parent_id = parent_id
+        FlowExpression.__init__(self, parent_id, element, fei)
 
-        el_index = 0
-        for child in element:
-            if child.tag == 'condition':
-                html_parser = HTMLParser()
-                self.conditions.append(html_parser.unescape(child.text))
-            elif is_activity(child.tag):
-                self.children.append(
-                    create_fe_from_element(self.id, child,
-                                           "%s_%s" % (fei, el_index)))
-                el_index = el_index + 1
-            else:
-                LOG.error("Unknown element: %s", child.tag)
+    def parse_non_child(self, element):
+        """Parse case's conditions."""
 
-    def evaluate(self):
+        if element.tag == 'condition':
+            html_parser = HTMLParser()
+            self.conditions.append(html_parser.unescape(element.text))
+        else:
+            raise CaseError("Unknown element: %s" % element.tag)
+
+    def evaluate(self, workitem):
         """Check if conditions are met."""
 
         for cond in self.conditions:
-            if (eval(cond)):
+            if (eval(cond, {"workitem": workitem})):
                 LOG.debug("Condition %s evaluated to True" % cond)
                 return True
             else:
@@ -256,17 +272,21 @@ class Case(FlowExpression):
         if self.state == 'ready' and event.name == 'start' \
                                  and event.target == self.id:
 
-            if not self.evaluate():
-                LOG.debug("Conditions for %r don't hold", self)
+            if not self.evaluate(event.workitem):
+                LOG.debug("Conditions for %r don't hold" % self)
                 return 'ignored'
 
             if len(self.children) > 0:
                 self.state = 'active'
                 event.target = self.children[0].id
                 LOG.debug("Start handling event in children")
-                event.trigger()
             else:
                 self.state = 'completed'
+                event.target = self.parent_id
+                event.workitem.event_name = 'completed'
+                event.workitem.origin = self.id
+
+            event.trigger()
             return 'consumed'
 
         for child in self.children:
@@ -299,7 +319,7 @@ class Switch(FlowExpression):
         if self.state == 'ready' and event.name == 'start' \
                                  and event.target == self.id:
             for case in self.children:
-                if case.evaluate():
+                if case.evaluate(event.workitem):
                     self.state = 'active'
                     event.target = case.id
                     event.trigger()
@@ -315,6 +335,98 @@ class Switch(FlowExpression):
                 return 'consumed'
 
         return 'ignored'
+
+class WhileError(FlowExpressionError):
+    pass
+
+class While(FlowExpression):
+    """While activity."""
+
+    allowed_child_types = ('action', 'switch', 'sequence', 'while')
+
+    def __init__(self, parent_id, element, fei):
+        """Constructor."""
+
+        self.conditions = []
+        FlowExpression.__init__(self, parent_id, element, fei)
+
+    def parse_non_child(self, element):
+        """Parse case's conditions."""
+
+        if element.tag == 'condition':
+            html_parser = HTMLParser()
+            self.conditions.append(html_parser.unescape(element.text))
+        else:
+            raise WhileError("Unknown element: %s" % element.tag)
+
+    def evaluate(self, workitem):
+        """Check if conditions are met."""
+
+        for cond in self.conditions:
+            if (eval(cond, {"workitem": workitem})):
+                LOG.debug("Condition %s evaluated to True" % cond)
+                return True
+            else:
+                LOG.debug("Condition %s evaluated to False" % cond)
+
+        return False
+
+    def handle_event(self, event):
+        """Handle event."""
+
+        if self._can_be_ignored(event):
+            return 'ignored'
+
+        if self.state == 'ready' and event.name == 'start' \
+                                 and event.target == self.id:
+
+            if not self.evaluate(event.workitem):
+                LOG.debug("Conditions for %r don't hold" % self)
+                self.state = 'completed'
+                event.target = self.parent_id
+                event.workitem.event_name = 'completed'
+                event.workitem.origin = self.id
+                event.trigger()
+                return 'consumed'
+
+            if len(self.children) > 0:
+                self.state = 'active'
+                event.target = self.children[0].id
+                LOG.debug("Start handling event in children")
+            else:
+                raise WhileError("While activity can't be empty")
+
+            event.trigger()
+            return 'consumed'
+
+        if self.state == 'active' and event.name == 'completed' \
+                                  and event.target == self.id:
+            for index, child in zip(range(0, len(self.children)), self.children):
+                if child.id == event.workitem.origin:
+                    if (index + 1) < len(self.children):
+                        event.target = "%s_%d" % (self.id, index + 1)
+                        event.workitem.event_name = 'start'
+                        event.workitem.origin = self.id
+                    else:
+                        if not self.evaluate(event.workitem):
+                            self.state = 'completed'
+                            event.target = self.parent_id
+                            event.workitem.event_name = 'completed'
+                            event.workitem.origin = self.id
+                        else:
+                            self.reset_children()
+                            event.target = self.children[0].id
+                            event.workitem.origin = self.id
+                            event.workitem.event_name = 'start'
+                    LOG.debug("Trigger %r to continue from %r. Activities total: %d" % (event, self, len(self.children)))
+                    event.trigger()
+                    return 'consumed'
+            else:
+                LOG.warning("No origin found")
+
+        for child in self.children:
+            if child.handle_event(event) == 'consumed':
+                return 'consumed'
 
 def test():
     LOG.info("Success")

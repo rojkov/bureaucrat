@@ -16,5 +16,9 @@
             </case>
         </switch>
     </sequence>
-    <action participant="participant1"></action>
+    <while>
+        <condition>workitem.fields["counter"] &lt; 4</condition>
+        <action participant="participant1"></action>
+        <action participant="participant2"></action>
+    </while>
 </process>
