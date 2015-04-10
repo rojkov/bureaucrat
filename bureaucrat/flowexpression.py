@@ -54,6 +54,7 @@ class FlowExpression(object):
         self.state = 'ready'
         self.id = fei
         self.parent_id = parent_id
+        self.context = None
         self.children = []
 
         if len(self.allowed_child_types) == 0:
@@ -92,6 +93,7 @@ class FlowExpression(object):
             "id": self.id,
             "state": self.state,
             "type": self.fe_name,
+            "context": self.context,
             "children": [child.snapshot() for child in self.children]
         }
 
@@ -101,6 +103,7 @@ class FlowExpression(object):
         assert state["type"] == self.fe_name
         assert state["id"] == self.id
         self.state = state["state"]
+        self.context = state["context"]
         for child, childstate in zip(self.children, state["children"]):
             child.reset_state(childstate)
 
@@ -445,6 +448,7 @@ class All(FlowExpression):
                                  and event.target == self.id:
             if len(self.children) > 0:
                 self.state = 'active'
+                self.context = event.workitem.fields
                 for child in self.children:
                     assert child.state == 'ready'
                     workitem = Workitem.create(event.workitem.pid, 'start')
@@ -463,6 +467,7 @@ class All(FlowExpression):
 
         if self.state == 'active' and event.name == 'completed' \
                                   and event.target == self.id:
+            self.context.update(event.workitem.fields)
             for child in self.children:
                 if child.state == 'active':
                     break
@@ -471,6 +476,7 @@ class All(FlowExpression):
                 event.target = self.parent_id
                 event.workitem.event_name = 'completed'
                 event.workitem.origin = self.id
+                event.workitem.fields = self.context
                 event.trigger()
             return 'consumed'
 
