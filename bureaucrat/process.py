@@ -32,7 +32,7 @@ class Process(object):
         return "<%s[%s]>" % (self.__class__.__name__, self)
 
     @staticmethod
-    def load(definition_path):
+    def load(definition_path, pid):
         """Load a process instance for the given definition."""
         LOG.debug("Load a process definition from %s" % definition_path)
 
@@ -41,6 +41,7 @@ class Process(object):
         assert root.tag == 'process'
 
         process = Process()
+        process.uuid = pid
 
         el_index = 0
         for element in root:
@@ -49,7 +50,8 @@ class Process(object):
 
             if tag in get_supported_flowexpressions():
                 process.children.append(
-                    create_fe_from_element('', element, "%d" % el_index))
+                    create_fe_from_element(process.uuid, element,
+                                           "%s_%d" % (process.uuid, el_index)))
                 el_index = el_index + 1
             else:
                 LOG.warning("Unknown element: %s", tag)
@@ -71,29 +73,28 @@ class Process(object):
         with open(defpath, 'w') as fhdl:
             fhdl.write(definition)
 
-        process = Process.load(defpath)
-        process.uuid = newid
+        process = Process.load(defpath, newid)
         return process
 
     def handle_event(self, event):
         """Handle event in process instance."""
         LOG.debug("Handling %r in %r" % (event, self))
 
-        if event.name == 'start' and event.target == '':
+        if event.name == 'start' and event.target == self.uuid:
             if len(self.children) > 0:
-                event.target = '0'
+                event.target = "%s_%d" % (self.uuid, 0)
                 event.trigger()
                 return False
             else:
                 return True
 
-        if event.target == '' and event.name == 'completed':
+        if event.target == self.uuid and event.name == 'completed':
             for index, child in zip(range(0, len(self.children)), self.children):
                 if child.id == event.workitem.origin:
                     if (index + 1) < len(self.children):
-                        event.target = "%d" % (index + 1)
+                        event.target = "%s_%d" % (self.uuid, (index + 1))
                         event.workitem.event_name = 'start'
-                        event.workitem.origin = ''
+                        event.workitem.origin = self.uuid
                         event.trigger()
                         return False
                     else:
@@ -121,13 +122,12 @@ class Process(object):
                   'w') as fhdl:
             json.dump(snapshot, fhdl)
 
-    def resume(self, proc_id):
+    def resume(self):
         """Resume suspended process."""
-        LOG.debug("Resume process %s", proc_id)
-        self.uuid = proc_id
+        LOG.debug("Resume process %s", self.uuid)
         snapshot = None
         with open(os.path.join(SNAPSHOT_PATH,
-                               "process-%s" % proc_id), 'r') as fhdl:
+                               "process-%s" % self.uuid), 'r') as fhdl:
             snapshot = json.load(fhdl)
         for child, state in zip(self.children, snapshot['children']):
             child.reset_state(state)

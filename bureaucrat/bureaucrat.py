@@ -43,7 +43,7 @@ class Bureaucrat(Daemon):
         LOG.debug("Header: %r" % header)
         LOG.debug("Body: %r" % body)
         process = Process.create(body)
-        workitem = Workitem.create(process.uuid, 'start')
+        workitem = Workitem.create('start', process.uuid)
         event = Event(channel, workitem)
         if process.handle_event(event):
             LOG.debug("%r is completed" % process)
@@ -68,8 +68,8 @@ class Bureaucrat(Daemon):
 
         event = Event(channel, workitem)
         process = Process.load("/tmp/processes/definition-%s" % \
-                               workitem.pid)
-        process.resume(workitem.pid)
+                               workitem.target_pid, workitem.target_pid)
+        process.resume()
         if process.handle_event(event):
             LOG.debug("%r is completed" % process)
         process.suspend()

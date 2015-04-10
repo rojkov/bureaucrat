@@ -13,5 +13,5 @@ class TestProcess(unittest.TestCase):
     def test_load(self):
         """Test Process.load()."""
 
-        process = Process.load('examples/processes/example1.xml')
+        process = Process.load('examples/processes/example1.xml', 'fake-id')
         self.assertTrue(len(process.children) > 0)

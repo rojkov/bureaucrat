@@ -451,9 +451,8 @@ class All(FlowExpression):
                 self.context = event.workitem.fields
                 for child in self.children:
                     assert child.state == 'ready'
-                    workitem = Workitem.create(event.workitem.pid, 'start')
-                    workitem.origin = self.id
-                    workitem.target = child.id
+                    workitem = Workitem.create('start',
+                                               target=child.id, origin=self.id)
                     workitem.fields = event.workitem.fields
                     event.workitem = workitem
                     event.trigger()

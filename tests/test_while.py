@@ -27,7 +27,7 @@ class TestWhile(unittest.TestCase):
 
     def setUp(self):
         xml_element = ET.fromstring(self.processdsc)
-        self.fexpr = While('', xml_element, '0')
+        self.fexpr = While('fake-id', xml_element, 'fake-id_0')
         self.mock_event = Mock()
         self.mock_event.trigger = Mock()
 
@@ -41,7 +41,7 @@ class TestWhile(unittest.TestCase):
     def test_handle_event_wrong_target(self):
         """Test While.handle_event() when event targeted not to it."""
 
-        self.mock_event.target = '1'
+        self.mock_event.target = 'fake-id_1'
         self.fexpr.state = 'active'
         result = self.fexpr.handle_event(self.mock_event)
         self.assertTrue(result == 'ignored')
@@ -50,8 +50,8 @@ class TestWhile(unittest.TestCase):
         """Test While.handle_event() with response event."""
 
         self.mock_event.name = 'response'
-        self.mock_event.target = '0_0'
-        self.mock_event.workitem.origin = '0_0'
+        self.mock_event.target = 'fake-id_0_0'
+        self.mock_event.workitem.origin = 'fake-id_0_0'
         self.fexpr.state = 'active'
         self.fexpr.children[0].state = 'active'
         result = self.fexpr.handle_event(self.mock_event)
@@ -61,13 +61,13 @@ class TestWhile(unittest.TestCase):
         """Test While.handle_event() with completed event from first child."""
 
         self.mock_event.name = 'completed'
-        self.mock_event.target = '0'
-        self.mock_event.workitem.origin = '0_0'
+        self.mock_event.target = 'fake-id_0'
+        self.mock_event.workitem.origin = 'fake-id_0_0'
         self.fexpr.state = 'active'
         result = self.fexpr.handle_event(self.mock_event)
         self.assertTrue(result == 'consumed')
-        self.assertTrue(self.mock_event.target == '0_1')
-        self.assertTrue(self.mock_event.workitem.origin == '0')
+        self.assertTrue(self.mock_event.target == 'fake-id_0_1')
+        self.assertTrue(self.mock_event.workitem.origin == 'fake-id_0')
         self.assertTrue(self.mock_event.workitem.event_name == 'start')
         self.mock_event.trigger.assert_called_once_with()
 
@@ -80,12 +80,12 @@ class TestWhileTrueCondition(TestWhile):
         """Test While.handle_event() with start event."""
 
         self.mock_event.name = 'start'
-        self.mock_event.target = '0'
+        self.mock_event.target = 'fake-id_0'
         self.mock_event.workitem.origin = ''
         self.fexpr.state = 'ready'
         result = self.fexpr.handle_event(self.mock_event)
         self.assertTrue(result == 'consumed')
-        self.assertTrue(self.mock_event.target == '0_0')
+        self.assertTrue(self.mock_event.target == 'fake-id_0_0')
         self.mock_event.trigger.assert_called_once_with()
         self.assertTrue(self.fexpr.state == 'active')
 
@@ -93,14 +93,14 @@ class TestWhileTrueCondition(TestWhile):
         """Test While.handle_event() with completed event from last child."""
 
         self.mock_event.name = 'completed'
-        self.mock_event.target = '0'
-        self.mock_event.workitem.origin = '0_1'
+        self.mock_event.target = 'fake-id_0'
+        self.mock_event.workitem.origin = 'fake-id_0_1'
         self.fexpr.state = 'active'
         result = self.fexpr.handle_event(self.mock_event)
         self.assertTrue(result == 'consumed')
         self.assertTrue(self.fexpr.state == 'active')
-        self.assertTrue(self.mock_event.target == '0_0')
-        self.assertTrue(self.mock_event.workitem.origin == '0')
+        self.assertTrue(self.mock_event.target == 'fake-id_0_0')
+        self.assertTrue(self.mock_event.workitem.origin == 'fake-id_0')
         self.assertTrue(self.mock_event.workitem.event_name == 'start')
         self.mock_event.trigger.assert_called_once_with()
 
@@ -113,12 +113,12 @@ class TestWhileFalseCondition(TestWhile):
         """Test While.handle_event() with start event."""
 
         self.mock_event.name = 'start'
-        self.mock_event.target = '0'
-        self.mock_event.workitem.origin = ''
+        self.mock_event.target = 'fake-id_0'
+        self.mock_event.workitem.origin = 'fake-id'
         self.fexpr.state = 'ready'
         result = self.fexpr.handle_event(self.mock_event)
         self.assertTrue(result == 'consumed')
-        self.assertTrue(self.mock_event.target == '')
+        self.assertTrue(self.mock_event.target == 'fake-id')
         self.mock_event.trigger.assert_called_once_with()
         self.assertTrue(self.fexpr.state == 'completed')
 
@@ -126,8 +126,8 @@ class TestWhileFalseCondition(TestWhile):
         """Test While.handle_event() with completed event from last child."""
 
         self.mock_event.name = 'completed'
-        self.mock_event.target = '0'
-        self.mock_event.workitem.origin = '0_1'
+        self.mock_event.target = 'fake-id_0'
+        self.mock_event.workitem.origin = 'fake-id_0_1'
         self.fexpr.state = 'active'
         result = self.fexpr.handle_event(self.mock_event)
         self.assertTrue(result == 'consumed')

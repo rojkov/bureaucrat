@@ -31,8 +31,8 @@ class TestFlowExpression(unittest.TestCase):
     def test_constructor_no_children(self):
         """Test FlowExpression.__init__() for simple expression."""
 
-        fexpr = FlowExpression('', self.xml_element, '0')
-        self.assertTrue(fexpr.id == '0')
+        fexpr = FlowExpression('fake-id', self.xml_element, 'fake-id_0')
+        self.assertTrue(fexpr.id == 'fake-id_0')
 
     def test_constructor(self):
         """Test FlowExpression.__init__() for complex expression."""
@@ -43,6 +43,6 @@ class TestFlowExpression(unittest.TestCase):
         class TestExpression(FlowExpression):
             allowed_child_types = ('sequence',)
 
-        fexpr = TestExpression('', self.xml_element, '0')
-        self.assertTrue(fexpr.id == '0')
+        fexpr = TestExpression('fake-id', self.xml_element, 'fake-id_0')
+        self.assertTrue(fexpr.id == 'fake-id_0')
         self.assertTrue(len(fexpr.children) == 1)

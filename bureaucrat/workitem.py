@@ -15,14 +15,17 @@ class Workitem(BaseWorkitem):
     mime_type = 'application/x-bureaucrat-workitem'
 
     @staticmethod
-    def create(process_id, event_name):
+    def create(event_name, target, origin=None):
+
         self = Workitem()
+        if origin is None:
+            origin = target
+
         self._body = {
             "fei": {
-                "origin": '',
-                "pid": process_id,
                 "event_name": event_name,
-                "target": '',
+                "origin": origin,
+                "target": target,
                 "worker_type": None
             },
             "fields": {
@@ -38,8 +41,9 @@ class Workitem(BaseWorkitem):
     def loads(self, blob):
         try:
             self._body = json.loads(blob)
+            assert self._body["fei"]["event_name"] is not None
             assert self._body["fei"]["origin"] is not None
-            assert self._body["fei"]["pid"] is not None
+            assert self._body["fei"]["target"] is not None
             assert self._body["fields"] is not None
         except (ValueError, KeyError, TypeError, AssertionError):
             raise WorkitemError("Can't parse workitem body")
@@ -55,16 +59,6 @@ class Workitem(BaseWorkitem):
     def set_trace(self, trace):
         self._assert_body()
         self._body["trace"] = trace
-
-    @property
-    def pid(self):
-        """Return process Id this workitem belongs to.
-
-        This is a read only property.
-        """
-
-        self._assert_body()
-        return self._body["fei"]["pid"]
 
     @property
     def origin(self):
@@ -91,6 +85,11 @@ class Workitem(BaseWorkitem):
 
         self._assert_body()
         self._body["fei"]["target"] = new_target
+
+    @property
+    def target_pid(self):
+        """Return target process ID."""
+        return self._body["fei"]["target"].split('_', 1)[0]
 
     @property
     def fields(self):
