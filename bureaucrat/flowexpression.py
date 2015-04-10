@@ -33,6 +33,8 @@ def create_fe_from_element(parent_id, element, fei):
         return Case(parent_id, element, fei)
     elif tag == 'while':
         return While(parent_id, element, fei)
+    elif tag == 'all':
+        return All(parent_id, element, fei)
     else:
         raise FlowExpressionError("Unknown tag: %s" % tag)
 
@@ -438,6 +440,39 @@ class All(FlowExpression):
 
         if self._can_be_ignored(event):
             return 'ignored'
+
+        if self.state == 'ready' and event.name == 'start' \
+                                 and event.target == self.id:
+            if len(self.children) > 0:
+                self.state = 'active'
+                for child in self.children:
+                    assert child.state == 'ready'
+                    workitem = Workitem.create(event.workitem.pid, 'start')
+                    workitem.origin = self.id
+                    workitem.target = child.id
+                    workitem.fields = event.workitem.fields
+                    event.workitem = workitem
+                    event.trigger()
+            else:
+                self.state = 'completed'
+                event.target = self.parent_id
+                event.workitem.event_name = 'completed'
+                event.workitem.origin = self.id
+                event.trigger()
+            return 'consumed'
+
+        if self.state == 'active' and event.name == 'completed' \
+                                  and event.target == self.id:
+            for child in self.children:
+                if child.state == 'active':
+                    break
+            else:
+                self.state = 'completed'
+                event.target = self.parent_id
+                event.workitem.event_name = 'completed'
+                event.workitem.origin = self.id
+                event.trigger()
+            return 'consumed'
 
         for child in self.children:
             if child.handle_event(event) == 'consumed':

@@ -79,7 +79,7 @@ class TestAll(unittest.TestCase):
         self.mock_event.target = '0'
         self.mock_event.workitem.origin = '0_1'
         self.fexpr.state = 'active'
-        self.fexpr.children[0].state = 'active'
+        self.fexpr.children[0].state = 'completed'
         self.fexpr.children[1].state = 'completed'
         result = self.fexpr.handle_event(self.mock_event)
         self.assertTrue(result == 'consumed')

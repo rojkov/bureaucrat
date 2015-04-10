@@ -21,4 +21,8 @@
         <action participant="participant1"></action>
         <action participant="participant2"></action>
     </while>
+    <all>
+        <action participant="participant1"></action>
+        <action participant="participant2"></action>
+    </all>
 </process>

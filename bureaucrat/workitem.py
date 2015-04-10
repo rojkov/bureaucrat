@@ -99,6 +99,12 @@ class Workitem(BaseWorkitem):
         self._assert_body()
         return self._body["fields"]
 
+    @fields.setter
+    def fields(self, new_fields):
+        """Update workitem's fields."""
+        self._assert_body()
+        self._body["fields"] = new_fields
+
     @property
     def event_name(self):
         """Return workitem's event name."""
