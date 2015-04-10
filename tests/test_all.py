@@ -46,6 +46,7 @@ class TestAll(unittest.TestCase):
         self.fexpr.children[0].state = 'active'
         result = self.fexpr.handle_event(self.mock_event)
         self.assertTrue(result == 'consumed')
+        self.mock_event.trigger.assert_called_once_with()
 
     def test_handle_event_start(self):
         """Test All.handle_event() with start event."""
@@ -89,3 +90,4 @@ class TestAll(unittest.TestCase):
         self.assertTrue(result == 'consumed')
         self.assertTrue(self.fexpr.state == 'completed')
         # TODO: assert completed event was sent to parent
+        self.mock_event.trigger.assert_called_once_with()

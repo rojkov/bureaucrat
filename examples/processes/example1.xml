@@ -25,4 +25,5 @@
         <action participant="participant1"></action>
         <action participant="participant2"></action>
     </all>
+    <call process="$some_process" />
 </process>

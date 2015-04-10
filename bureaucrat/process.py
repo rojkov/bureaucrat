@@ -18,8 +18,9 @@ class Process(object):
     def __init__(self):
         """Constructor."""
 
-        self.context = None
         self.id = None
+        self.parent_id = None
+        self.context = None
         self.children = []
         self.version = 0
 
@@ -42,6 +43,9 @@ class Process(object):
 
         process = Process()
         process.id = pid
+
+        if "parent" in root.attrib:
+            process.parent_id = root.attrib["parent"]
 
         el_index = 0
         for element in root:
@@ -86,6 +90,11 @@ class Process(object):
                 event.trigger()
                 return False
             else:
+                if self.parent_id is not None: # TODO: move to function
+                    event.target = self.parent_id
+                    event.workitem.origin = self.id
+                    event.workitem.event_name = 'completed'
+                    event.trigger()
                 return True
 
         if event.target == self.id and event.name == 'completed':
@@ -98,6 +107,11 @@ class Process(object):
                         event.trigger()
                         return False
                     else:
+                        if self.parent_id is not None: # TODO: move to function
+                            event.target = self.parent_id
+                            event.workitem.origin = self.id
+                            event.workitem.event_name = 'completed'
+                            event.trigger()
                         return True
 
         for child in self.children:
@@ -115,6 +129,7 @@ class Process(object):
 
         snapshot = {
             "version": self.version,
+            "parent_id": self.parent_id,
             "children": [child.snapshot() for child in self.children]
         }
 
@@ -129,5 +144,6 @@ class Process(object):
         with open(os.path.join(SNAPSHOT_PATH,
                                "process-%s" % self.id), 'r') as fhdl:
             snapshot = json.load(fhdl)
+        self.parent_id = snapshot["parent_id"]
         for child, state in zip(self.children, snapshot['children']):
             child.reset_state(state)

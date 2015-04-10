@@ -2,19 +2,17 @@ import logging
 import pika
 import sexpdata
 from HTMLParser import HTMLParser
+import xml.etree.ElementTree as ET
 
 from event import Event
 from workitem import Workitem
 
 LOG = logging.getLogger(__name__)
 
-def is_activity(tag):
-    return tag in ('sequence', 'action', 'switch', 'while', 'all')
-
 def get_supported_flowexpressions():
     """Return list of supported types of flow expressions."""
     # TODO: calculate supported activities dynamically and cache
-    return ('action', 'sequence', 'switch', 'while', 'all')
+    return ('action', 'sequence', 'switch', 'while', 'all', 'call')
 
 class FlowExpressionError(Exception):
     pass
@@ -35,6 +33,8 @@ def create_fe_from_element(parent_id, element, fei):
         return While(parent_id, element, fei)
     elif tag == 'all':
         return All(parent_id, element, fei)
+    elif tag == 'call':
+        return Call(parent_id, element, fei)
     else:
         raise FlowExpressionError("Unknown tag: %s" % tag)
 
@@ -135,7 +135,7 @@ class FlowExpression(object):
 class Sequence(FlowExpression):
     """A sequence activity."""
 
-    allowed_child_types = ('action', 'switch', 'sequence', 'while', 'all')
+    allowed_child_types = get_supported_flowexpressions()
 
     def handle_event(self, event):
         """Handle event."""
@@ -219,7 +219,7 @@ class CaseError(FlowExpressionError):
 class Case(FlowExpression):
     """Case element of switch activity."""
 
-    allowed_child_types = ('action', 'sequence', 'switch', 'while', 'all')
+    allowed_child_types = get_supported_flowexpressions()
 
     def __init__(self, parent_id, element, fei):
         """Constructor."""
@@ -347,7 +347,7 @@ class WhileError(FlowExpressionError):
 class While(FlowExpression):
     """While activity."""
 
-    allowed_child_types = ('action', 'switch', 'sequence', 'while', 'all')
+    allowed_child_types = get_supported_flowexpressions()
 
     def __init__(self, parent_id, element, fei):
         """Constructor."""
@@ -436,7 +436,7 @@ class While(FlowExpression):
 class All(FlowExpression):
     """All activity."""
 
-    allowed_child_types = ('action', 'switch', 'sequence', 'while', 'all')
+    allowed_child_types = get_supported_flowexpressions()
 
     def handle_event(self, event):
         """Handle event."""
@@ -482,6 +482,54 @@ class All(FlowExpression):
         for child in self.children:
             if child.handle_event(event) == 'consumed':
                 return 'consumed'
+
+class Call(FlowExpression):
+    """Call activity."""
+
+    def __init__(self, parent_id, element, fei):
+        """Constructor."""
+
+        FlowExpression.__init__(self, parent_id, element, fei)
+        self.process_name = element.attrib["process"]
+
+    def handle_event(self, event):
+        """Handle event."""
+
+        if self._can_be_ignored(event):
+            return 'ignored'
+
+        result = 'consumed'
+        if self.state == 'ready' and event.name == 'start':
+            self.state = 'active'
+            LOG.debug("Calling a subprocess process")
+
+            assert self.process_name.startswith('$'), \
+                    "Only process defs referenced from workitem are supported."
+            ref = self.process_name[1:]
+            root = ET.fromstring(event.workitem.fields[ref])
+            assert root.tag == 'process'
+            root.set('parent', self.id)
+            pdef = ET.tostring(root)
+            event.channel.basic_publish(exchange='',
+                                        routing_key='bureaucrat',
+                                        body=pdef,
+                                        properties=pika.BasicProperties(
+                                            delivery_mode=2
+                                        ))
+        elif self.state == 'active' and event.name == 'completed' \
+                                    and event.target == self.id:
+            LOG.debug("Subprocess initiated in %s has completed" % self.id)
+            self.state = 'completed'
+            # reply to parent that the child is done
+            event.target = self.parent_id
+            event.workitem.event_name = "completed"
+            event.workitem.origin = self.id
+            event.trigger()
+        else:
+            LOG.debug("%r ignores %r" %(self, event))
+            result = 'ignored'
+
+        return result
 
 def test():
     LOG.info("Success")
