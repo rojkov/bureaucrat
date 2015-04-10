@@ -19,13 +19,13 @@ class Process(object):
         """Constructor."""
 
         self.context = None
-        self.uuid = None
+        self.id = None
         self.children = []
         self.version = 0
 
     def __str__(self):
         """Return string representation of process."""
-        return self.uuid
+        return self.id
 
     def __repr__(self):
         """Instance representation."""
@@ -41,7 +41,7 @@ class Process(object):
         assert root.tag == 'process'
 
         process = Process()
-        process.uuid = pid
+        process.id = pid
 
         el_index = 0
         for element in root:
@@ -50,8 +50,8 @@ class Process(object):
 
             if tag in get_supported_flowexpressions():
                 process.children.append(
-                    create_fe_from_element(process.uuid, element,
-                                           "%s_%d" % (process.uuid, el_index)))
+                    create_fe_from_element(process.id, element,
+                                           "%s_%d" % (process.id, el_index)))
                 el_index = el_index + 1
             else:
                 LOG.warning("Unknown element: %s", tag)
@@ -80,21 +80,21 @@ class Process(object):
         """Handle event in process instance."""
         LOG.debug("Handling %r in %r" % (event, self))
 
-        if event.name == 'start' and event.target == self.uuid:
+        if event.name == 'start' and event.target == self.id:
             if len(self.children) > 0:
-                event.target = "%s_%d" % (self.uuid, 0)
+                event.target = self.children[0].id
                 event.trigger()
                 return False
             else:
                 return True
 
-        if event.target == self.uuid and event.name == 'completed':
+        if event.target == self.id and event.name == 'completed':
             for index, child in zip(range(0, len(self.children)), self.children):
                 if child.id == event.workitem.origin:
                     if (index + 1) < len(self.children):
-                        event.target = "%s_%d" % (self.uuid, (index + 1))
+                        event.target = "%s_%d" % (self.id, (index + 1))
                         event.workitem.event_name = 'start'
-                        event.workitem.origin = self.uuid
+                        event.workitem.origin = self.id
                         event.trigger()
                         return False
                     else:
@@ -118,16 +118,16 @@ class Process(object):
             "children": [child.snapshot() for child in self.children]
         }
 
-        with open(os.path.join(SNAPSHOT_PATH, "process-%s" % self.uuid),
+        with open(os.path.join(SNAPSHOT_PATH, "process-%s" % self.id),
                   'w') as fhdl:
             json.dump(snapshot, fhdl)
 
     def resume(self):
         """Resume suspended process."""
-        LOG.debug("Resume process %s", self.uuid)
+        LOG.debug("Resume process %s", self.id)
         snapshot = None
         with open(os.path.join(SNAPSHOT_PATH,
-                               "process-%s" % self.uuid), 'r') as fhdl:
+                               "process-%s" % self.id), 'r') as fhdl:
             snapshot = json.load(fhdl)
         for child, state in zip(self.children, snapshot['children']):
             child.reset_state(state)
