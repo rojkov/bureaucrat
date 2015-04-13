@@ -3,6 +3,12 @@ import pika
 
 LOG = logging.getLogger(__name__)
 
+#TASK_QUEUE = 'taskqueue'
+TASK_QUEUE = 'celery'
+
+if TASK_QUEUE == 'celery':
+    from participants.tasks import webhooks
+
 class Event(object):
     """Wrapper around Workitem providing communication channel."""
 
@@ -50,12 +56,18 @@ class Event(object):
     def elaborate_at(self, worker_type):
         """Send workitem to remote worker to elaborate."""
 
-        self.workitem.worker_type = worker_type
-        self.workitem.event_name = 'response'
-        self.channel.basic_publish(exchange='',
-                                   routing_key="taskqueue",
-                                   body=self.workitem.dumps(),
-                                   properties=pika.BasicProperties(
-                                       delivery_mode=2,
-                                       content_type=self.workitem.mime_type
-                                   ))
+        if TASK_QUEUE == 'taskqueue':
+            self.workitem.worker_type = worker_type
+            self.workitem.event_name = 'response'
+            self.channel.basic_publish(exchange='',
+                                       routing_key="taskqueue",
+                                       body=self.workitem.dumps(),
+                                       properties=pika.BasicProperties(
+                                           delivery_mode=2,
+                                           content_type=self.workitem.mime_type
+                                       ))
+        elif TASK_QUEUE == 'celery':
+            self.workitem.event_name = 'response'
+            eval("webhooks.%s.delay(self.workitem._body)" % worker_type)
+        else:
+            raise NotImplemented()
