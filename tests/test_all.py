@@ -1,7 +1,7 @@
 import unittest
 import xml.etree.ElementTree as ET
 
-from mock import Mock
+from mock import Mock, call, patch
 
 from bureaucrat.flowexpression import All
 
@@ -18,76 +18,91 @@ class TestAll(unittest.TestCase):
     def setUp(self):
         xml_element = ET.fromstring(processdsc)
         self.fexpr = All('fake-id', xml_element, 'fake-id_0')
-        self.mock_event = Mock()
-        self.mock_event.trigger = Mock()
+        self.ch = Mock()
+        self.wi = Mock()
+        self.wi.send = Mock()
 
-    def test_handle_event_completed_state(self):
-        """Test All.handle_event() when While is completed."""
+    def test_handle_workitem_completed_state(self):
+        """Test All.handle_workitem() when While is completed."""
 
         self.fexpr.state = 'completed'
-        result = self.fexpr.handle_event(self.mock_event)
+        result = self.fexpr.handle_workitem(self.ch, self.wi)
         self.assertTrue(result == 'ignored')
 
-    def test_handle_event_wrong_target(self):
-        """Test All.handle_event() when event targeted not to it."""
+    def test_handle_workitem_wrong_target(self):
+        """Test All.handle_workitem() when workitem targeted not to it."""
 
-        self.mock_event.target = 'fake-id_1'
+        self.wi.target = 'fake-id_1'
         self.fexpr.state = 'active'
-        result = self.fexpr.handle_event(self.mock_event)
+        result = self.fexpr.handle_workitem(self.ch, self.wi)
         self.assertTrue(result == 'ignored')
 
-    def test_handle_event_response(self):
-        """Test All.handle_event() with response event."""
+    def test_handle_workitem_response(self):
+        """Test All.handle_workitem() with response event."""
 
-        self.mock_event.name = 'response'
-        self.mock_event.target = 'fake-id_0_0'
-        self.mock_event.workitem.origin = 'fake-id_0_0'
+        self.wi.message = 'response'
+        self.wi.target = 'fake-id_0_0'
+        self.wi.origin = 'fake-id_0_0'
         self.fexpr.state = 'active'
         self.fexpr.children[0].state = 'active'
-        result = self.fexpr.handle_event(self.mock_event)
+        result = self.fexpr.handle_workitem(self.ch, self.wi)
         self.assertTrue(result == 'consumed')
-        self.mock_event.trigger.assert_called_once_with()
+        self.wi.send.assert_called_once_with(self.ch, message='completed',
+                                             origin='fake-id_0_0',
+                                             target='fake-id_0')
 
-    def test_handle_event_start(self):
-        """Test All.handle_event() with start event."""
+    def test_handle_workitem_start(self):
+        """Test All.handle_workitem() with start event."""
 
-        self.mock_event.name = 'start'
-        self.mock_event.target = 'fake-id_0'
-        self.mock_event.workitem.origin = 'fake-id'
+        self.wi.message = 'start'
+        self.wi.target = 'fake-id_0'
+        self.wi.origin = 'fake-id'
         self.fexpr.state = 'ready'
-        result = self.fexpr.handle_event(self.mock_event)
+        result = self.fexpr.handle_workitem(self.ch, self.wi)
         self.assertTrue(result == 'consumed')
         self.assertTrue(self.fexpr.state == 'active')
-        # TODO: assert start events were sent to all children
+        expected = [
+            call(self.ch, message='start', origin='fake-id_0',
+                 target='fake-id_0_0'),
+            call(self.ch, message='start', origin='fake-id_0',
+                 target='fake-id_0_1'),
+        ]
+        self.assertTrue(self.wi.send.call_args_list == expected)
 
-    def test_handle_event_completed_with_active_child(self):
-        """Test All.handle_event() with completed event and an active child."""
+    def test_handle_workitem_completed_with_active_child(self):
+        """Test All.handle_workitem() with completed event and active child."""
 
-        self.mock_event.name = 'completed'
-        self.mock_event.target = 'fake-id_0'
-        self.mock_event.workitem.origin = 'fake-id_0_1'
-        self.mock_event.workitem.fields = {}
+        self.wi.message = 'completed'
+        self.wi.target = 'fake-id_0'
+        self.wi.origin = 'fake-id_0_1'
+        self.wi.fields = {}
         self.fexpr.state = 'active'
         self.fexpr.context = {}
         self.fexpr.children[0].state = 'active'
         self.fexpr.children[1].state = 'completed'
-        result = self.fexpr.handle_event(self.mock_event)
+        result = self.fexpr.handle_workitem(self.ch, self.wi)
         self.assertTrue(result == 'consumed')
         self.assertTrue(self.fexpr.state == 'active')
+        self.assertTrue(self.wi.send.call_args_list == [])
 
-    def test_handle_event_completed_with_completed_children(self):
-        """Test All.handle_event() with completed event with no active child."""
+    def test_handle_workitem_completed_with_completed_children(self):
+        """Test All.handle_workitem() with completed workitem with no active child."""
 
-        self.mock_event.name = 'completed'
-        self.mock_event.target = 'fake-id_0'
-        self.mock_event.workitem.origin = 'fake-id_0_1'
-        self.mock_event.workitem.fields = {}
+        self.wi.message = 'completed'
+        self.wi.target = 'fake-id_0'
+        self.wi.origin = 'fake-id_0_1'
+        self.wi.fields = {}
         self.fexpr.state = 'active'
         self.fexpr.context = {}
         self.fexpr.children[0].state = 'completed'
         self.fexpr.children[1].state = 'completed'
-        result = self.fexpr.handle_event(self.mock_event)
-        self.assertTrue(result == 'consumed')
-        self.assertTrue(self.fexpr.state == 'completed')
-        # TODO: assert completed event was sent to parent
-        self.mock_event.trigger.assert_called_once_with()
+        with patch('bureaucrat.flowexpression.Workitem') as mock_wiclass:
+            mock_wi = Mock()
+            mock_wiclass.return_value = mock_wi
+            result = self.fexpr.handle_workitem(self.ch, self.wi)
+            self.assertTrue(result == 'consumed')
+            self.assertTrue(self.fexpr.state == 'completed')
+            mock_wiclass.assert_called_once()
+            mock_wi.send.assert_called_once_with(self.ch, message='completed',
+                                                 origin='fake-id_0',
+                                                 target='fake-id')

@@ -80,42 +80,36 @@ class Process(object):
         process = Process.load(defpath, newid)
         return process
 
-    def handle_event(self, event):
-        """Handle event in process instance."""
-        LOG.debug("Handling %r in %r" % (event, self))
+    def handle_workitem(self, channel, workitem):
+        """Handle workitem in process instance."""
+        LOG.debug("Handling %r in %r" % (workitem, self))
 
-        if event.name == 'start' and event.target == self.id:
+        if workitem.message == 'start' and workitem.target == self.id:
             if len(self.children) > 0:
-                event.target = self.children[0].id
-                event.trigger()
+                workitem.send(channel, message='start', origin=self.id,
+                              target=self.children[0].id)
                 return False
             else:
-                if self.parent_id is not None: # TODO: move to function
-                    event.target = self.parent_id
-                    event.workitem.origin = self.id
-                    event.workitem.event_name = 'completed'
-                    event.trigger()
+                if self.parent_id is not None:
+                    workitem.send(channel, message='completed', origin=self.id,
+                                  target=self.parent_id)
                 return True
 
-        if event.target == self.id and event.name == 'completed':
+        if workitem.message == 'completed' and workitem.target == self.id:
             for index, child in zip(range(0, len(self.children)), self.children):
-                if child.id == event.workitem.origin:
+                if child.id == workitem.origin:
                     if (index + 1) < len(self.children):
-                        event.target = "%s_%d" % (self.id, (index + 1))
-                        event.workitem.event_name = 'start'
-                        event.workitem.origin = self.id
-                        event.trigger()
+                        workitem.send(channel, message='start', origin=self.id,
+                                      target="%s_%d" % (self.id, (index + 1)))
                         return False
                     else:
-                        if self.parent_id is not None: # TODO: move to function
-                            event.target = self.parent_id
-                            event.workitem.origin = self.id
-                            event.workitem.event_name = 'completed'
-                            event.trigger()
+                        if self.parent_id is not None:
+                            workitem.send(channel, message='completed',
+                                          origin=self.id, target=self.parent_id)
                         return True
 
         for child in self.children:
-            if child.handle_event(event) == 'consumed':
+            if child.handle_workitem(channel, workitem) == 'consumed':
                 break
 
         return False

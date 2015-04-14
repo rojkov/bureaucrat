@@ -4,7 +4,6 @@ import sexpdata
 from HTMLParser import HTMLParser
 import xml.etree.ElementTree as ET
 
-from event import Event
 from workitem import Workitem
 
 LOG = logging.getLogger(__name__)
@@ -76,7 +75,8 @@ class FlowExpression(object):
 
     def __repr__(self):
         """Instance representation."""
-        return "<%s[%s]>" % (self.__class__.__name__, self)
+        return "<%s[%s, state='%s']>" % (self.__class__.__name__, self,
+                                       self.state)
 
     def parse_non_child(self, element):
         """Parse disallowed child element.
@@ -107,20 +107,21 @@ class FlowExpression(object):
         for child, childstate in zip(self.children, state["children"]):
             child.reset_state(childstate)
 
-    def handle_event(self, event):
-        """Handle event."""
-        raise NotImplemented
+    def handle_workitem(self, channel, workitem):
+        """Handle workitem."""
+        raise NotImplemented()
 
-    def _can_be_ignored(self, event):
-        """Check if event can be safely ignored."""
+    def _can_be_ignored(self, workitem):
+        """Check if workitem can be safely ignored."""
 
         can_be_ignored = False
 
         if self.state == 'completed':
-            LOG.debug("%r is done already, %r is ignored" % (self, event))
+            LOG.debug("%r is done already, %r is ignored" % (self, workitem))
             can_be_ignored = True
-        elif event.target is not None and not event.target.startswith(self.id):
-            LOG.debug("%r is not for %r" % (event, self))
+        elif workitem.target is not None and \
+                not workitem.target.startswith(self.id):
+            LOG.debug("%r is not for %r" % (workitem, self))
             can_be_ignored = True
 
         return can_be_ignored
@@ -137,39 +138,37 @@ class Sequence(FlowExpression):
 
     allowed_child_types = get_supported_flowexpressions()
 
-    def handle_event(self, event):
-        """Handle event."""
+    def handle_workitem(self, channel, workitem):
+        """Handle workitem."""
 
-        if self._can_be_ignored(event):
+        if self._can_be_ignored(workitem):
             return 'ignored'
 
-        if self.state == 'active' and event.name == 'completed' \
-                                  and event.target == self.id:
+        if self.state == 'active' and workitem.message == 'completed' \
+                                  and workitem.target == self.id:
             for index, child in zip(range(0, len(self.children)), self.children):
-                if child.id == event.workitem.origin:
+                if child.id == workitem.origin:
                     if (index + 1) < len(self.children):
-                        event.target = "%s_%d" % (self.id, index + 1)
-                        event.workitem.event_name = 'start'
+                        workitem.send(channel, message='start', origin=self.id,
+                                      target="%s_%d" % (self.id, index + 1))
                     else:
                         self.state = 'completed'
-                        event.target = self.parent_id
-                        event.workitem.event_name = 'completed'
-                    event.workitem.origin = self.id
-                    event.trigger()
+                        workitem.send(channel, message='completed',
+                                      origin=self.id, target=self.parent_id)
                     return 'consumed'
 
-        if self.state == 'ready' and event.name == 'start' \
-                                 and event.target == self.id:
+        if self.state == 'ready' and workitem.message == 'start' \
+                                 and workitem.target == self.id:
             if len(self.children) > 0:
                 self.state = 'active'
-                event.target = self.children[0].id
-                event.trigger()
+                workitem.send(channel, message='start', origin=self.id,
+                              target=self.children[0].id)
             else:
                 self.state = 'completed'
             return 'consumed'
 
         for child in self.children:
-            if child.handle_event(event) == 'consumed':
+            if child.handle_workitem(channel, workitem) == 'consumed':
                 return 'consumed'
 
         return 'ignored'
@@ -187,29 +186,27 @@ class Action(FlowExpression):
         """String representation."""
         return "%s-%s" % (self.participant, self.id)
 
-    def handle_event(self, event):
-        """Handle event."""
+    def handle_workitem(self, channel, workitem):
+        """Handle workitem."""
 
-        if self._can_be_ignored(event):
+        if self._can_be_ignored(workitem):
             return 'ignored'
 
         result = 'ignore'
-        if self.state == 'ready' and event.name == 'start':
+        if self.state == 'ready' and workitem.message == 'start':
             LOG.debug("Activate participant %s" % self.participant)
             self.state = 'active'
-            event.elaborate_at(self.participant)
+            workitem.elaborate(channel, self.participant, self.id)
             result = 'consumed'
-        elif self.state == 'active' and event.name == 'response':
+        elif self.state == 'active' and workitem.message == 'response':
             LOG.debug("Got response for action %s" % self.id)
             self.state = 'completed'
             # reply to parent that the child is done
-            event.target = self.parent_id
-            event.workitem.event_name = "completed"
-            event.workitem.origin = self.id
-            event.trigger()
+            workitem.send(channel, message='completed', origin=self.id,
+                          target=self.parent_id)
             result = 'consumed'
         else:
-            LOG.debug("%r ignores %r" %(self, event))
+            LOG.debug("%r ignores %r" %(self, workitem))
 
         return result
 
@@ -248,57 +245,55 @@ class Case(FlowExpression):
 
         return False
 
-    def handle_event(self, event):
-        """Handle event."""
-        LOG.debug("handling %r in %r" % (event, self))
+    def handle_workitem(self, channel, workitem):
+        """Handle workitem."""
+        LOG.debug("handling %r in %r" % (workitem, self))
 
-        if self._can_be_ignored(event):
+        if self._can_be_ignored(workitem):
             return 'ignored'
 
-        if self.state == 'active' and event.name == 'completed' \
-                                  and event.target == self.id:
-            for index, child in zip(range(0, len(self.children)), self.children):
-                if child.id == event.workitem.origin:
+        if self.state == 'active' and workitem.message == 'completed' \
+                                  and workitem.target == self.id:
+            for index, child in zip(range(0, len(self.children)),
+                                    self.children):
+                if child.id == workitem.origin:
                     if (index + 1) < len(self.children):
-                        event.target = "%s_%d" % (self.id, index + 1)
-                        event.workitem.event_name = 'start'
-                        event.workitem.origin = self.id
+                        workitem.send(channel, message='start', origin=self.id,
+                                      target="%s_%d" % (self.id, index + 1))
                     else:
                         self.state = 'completed'
-                        event.target = self.parent_id
-                        event.workitem.event_name = 'completed'
-                        event.workitem.origin = self.id
-                    LOG.debug("Trigger %r to continue from %r. Activities total: %d" % (event, self, len(self.children)))
-                    event.trigger()
+                        workitem.send(channel, message='completed',
+                                      target=self.parent_id, origin=self.id)
+                    LOG.debug("Send %r to continue from %r. Activities total: %d" % (workitem, self,
+                                                        len(self.children)))
                     return 'consumed'
             else:
                 LOG.warning("No origin found")
 
-        if self.state == 'ready' and event.name == 'start' \
-                                 and event.target == self.id:
+        if self.state == 'ready' and workitem.message == 'start' \
+                                 and workitem.target == self.id:
 
-            if not self.evaluate(event.workitem):
+            if not self.evaluate(workitem):
                 LOG.debug("Conditions for %r don't hold" % self)
                 return 'ignored'
 
             if len(self.children) > 0:
                 self.state = 'active'
-                event.target = self.children[0].id
-                LOG.debug("Start handling event in children")
+                LOG.debug("Start handling workitem in children")
+                workitem.send(channel, message='start', origin=self.id,
+                              target=self.children[0].id)
             else:
                 self.state = 'completed'
-                event.target = self.parent_id
-                event.workitem.event_name = 'completed'
-                event.workitem.origin = self.id
+                workitem.send(channel, message='completed', origin=self.id,
+                              target=self.parent_id)
 
-            event.trigger()
             return 'consumed'
 
         for child in self.children:
-            if child.handle_event(event) == 'consumed':
+            if child.handle_workitem(channel, workitem) == 'consumed':
                 return 'consumed'
 
-        LOG.debug("%r was ignored in %r" % (event, self))
+        LOG.debug("%r was ignored in %r" % (workitem, self))
         return 'ignored'
 
 class Switch(FlowExpression):
@@ -306,28 +301,27 @@ class Switch(FlowExpression):
 
     allowed_child_types = ('case', )
 
-    def handle_event(self, event):
-        """Handle event."""
+    def handle_workitem(self, channel, workitem):
+        """Handle workitem."""
 
-        if self._can_be_ignored(event):
+        LOG.debug("Handling %r in %r" % (workitem, self))
+        if self._can_be_ignored(workitem):
             return 'ignored'
 
-        if self.state == 'active' and event.name == 'completed' \
-                                  and event.target == self.id:
+        if self.state == 'active' and workitem.message == 'completed' \
+                                  and workitem.target == self.id:
             self.state = 'completed'
-            event.target = self.parent_id
-            event.workitem.event_name = 'completed'
-            event.workitem.origin = self.id
-            event.trigger()
+            workitem.send(channel, message='completed', origin=self.id,
+                          target=self.parent_id)
             return 'consumed'
 
-        if self.state == 'ready' and event.name == 'start' \
-                                 and event.target == self.id:
+        if self.state == 'ready' and workitem.message == 'start' \
+                                 and workitem.target == self.id:
             for case in self.children:
-                if case.evaluate(event.workitem):
+                if case.evaluate(workitem):
                     self.state = 'active'
-                    event.target = case.id
-                    event.trigger()
+                    workitem.send(channel, message='start', origin=self.id,
+                                  target=case.id)
                     break
                 else:
                     LOG.debug("Condition doesn't hold for %r" % case)
@@ -336,7 +330,7 @@ class Switch(FlowExpression):
             return 'consumed'
 
         for child in self.children:
-            if child.handle_event(event) == 'consumed':
+            if child.handle_workitem(channel, workitem) == 'consumed':
                 return 'consumed'
 
         return 'ignored'
@@ -376,61 +370,58 @@ class While(FlowExpression):
 
         return False
 
-    def handle_event(self, event):
-        """Handle event."""
+    def handle_workitem(self, channel, workitem):
+        """Handle workitem."""
 
-        if self._can_be_ignored(event):
+        if self._can_be_ignored(workitem):
             return 'ignored'
 
-        if self.state == 'ready' and event.name == 'start' \
-                                 and event.target == self.id:
+        if self.state == 'ready' and workitem.message == 'start' \
+                                 and workitem.target == self.id:
 
-            if not self.evaluate(event.workitem):
+            if not self.evaluate(workitem):
                 LOG.debug("Conditions for %r don't hold" % self)
                 self.state = 'completed'
-                event.target = self.parent_id
-                event.workitem.event_name = 'completed'
-                event.workitem.origin = self.id
-                event.trigger()
+                workitem.send(channel, message='completed', origin=self.id,
+                              target=self.parent_id)
                 return 'consumed'
 
             if len(self.children) > 0:
                 self.state = 'active'
-                event.target = self.children[0].id
-                LOG.debug("Start handling event in children")
+                LOG.debug("Start handling workitem in children")
+                workitem.send(channel, message='start', origin=self.id,
+                              target=self.children[0].id)
             else:
                 raise WhileError("While activity can't be empty")
 
-            event.trigger()
             return 'consumed'
 
-        if self.state == 'active' and event.name == 'completed' \
-                                  and event.target == self.id:
-            for index, child in zip(range(0, len(self.children)), self.children):
-                if child.id == event.workitem.origin:
+        if self.state == 'active' and workitem.message == 'completed' \
+                                  and workitem.target == self.id:
+            for index, child in zip(range(0, len(self.children)),
+                                    self.children):
+                if child.id == workitem.origin:
                     if (index + 1) < len(self.children):
-                        event.target = "%s_%d" % (self.id, index + 1)
-                        event.workitem.event_name = 'start'
-                        event.workitem.origin = self.id
+                        workitem.send(channel, message='start', origin=self.id,
+                                      target="%s_%d" % (self.id, index + 1))
                     else:
-                        if not self.evaluate(event.workitem):
+                        if not self.evaluate(workitem):
                             self.state = 'completed'
-                            event.target = self.parent_id
-                            event.workitem.event_name = 'completed'
-                            event.workitem.origin = self.id
+                            workitem.send(channel, message='completed',
+                                          origin=self.id, target=self.parent_id)
                         else:
                             self.reset_children()
-                            event.target = self.children[0].id
-                            event.workitem.origin = self.id
-                            event.workitem.event_name = 'start'
-                    LOG.debug("Trigger %r to continue from %r. Activities total: %d" % (event, self, len(self.children)))
-                    event.trigger()
+                            workitem.send(channel, message='start',
+                                          origin=self.id,
+                                          target=self.children[0].id)
+                    LOG.debug("Trigger %r to continue from %r. Activities total: %d" % (workitem, self,
+                                                        len(self.children)))
                     return 'consumed'
             else:
                 LOG.warning("No origin found")
 
         for child in self.children:
-            if child.handle_event(event) == 'consumed':
+            if child.handle_workitem(channel, workitem) == 'consumed':
                 return 'consumed'
 
 class All(FlowExpression):
@@ -438,49 +429,42 @@ class All(FlowExpression):
 
     allowed_child_types = get_supported_flowexpressions()
 
-    def handle_event(self, event):
-        """Handle event."""
+    def handle_workitem(self, channel, workitem):
+        """Handle workitem."""
 
-        if self._can_be_ignored(event):
+        if self._can_be_ignored(workitem):
             return 'ignored'
 
-        if self.state == 'ready' and event.name == 'start' \
-                                 and event.target == self.id:
+        if self.state == 'ready' and workitem.message == 'start' \
+                                 and workitem.target == self.id:
             if len(self.children) > 0:
                 self.state = 'active'
-                self.context = event.workitem.fields
+                self.context = workitem.fields
                 for child in self.children:
                     assert child.state == 'ready'
-                    workitem = Workitem.create('start',
-                                               target=child.id, origin=self.id)
-                    workitem.fields = event.workitem.fields
-                    event.workitem = workitem
-                    event.trigger()
+                    workitem.send(channel, message='start', origin=self.id,
+                                  target=child.id)
             else:
                 self.state = 'completed'
-                event.target = self.parent_id
-                event.workitem.event_name = 'completed'
-                event.workitem.origin = self.id
-                event.trigger()
+                workitem.send(channel, message='completed', origin=self.id,
+                              target=self.parent_id)
             return 'consumed'
 
-        if self.state == 'active' and event.name == 'completed' \
-                                  and event.target == self.id:
-            self.context.update(event.workitem.fields)
+        if self.state == 'active' and workitem.message == 'completed' \
+                                  and workitem.target == self.id:
+            self.context.update(workitem.fields)
             for child in self.children:
                 if child.state == 'active':
                     break
             else:
                 self.state = 'completed'
-                event.target = self.parent_id
-                event.workitem.event_name = 'completed'
-                event.workitem.origin = self.id
-                event.workitem.fields = self.context
-                event.trigger()
+                witem = Workitem(self.context)
+                witem.send(channel, message='completed', origin=self.id,
+                           target=self.parent_id)
             return 'consumed'
 
         for child in self.children:
-            if child.handle_event(event) == 'consumed':
+            if child.handle_workitem(channel, workitem) == 'consumed':
                 return 'consumed'
 
 class Call(FlowExpression):
@@ -492,41 +476,39 @@ class Call(FlowExpression):
         FlowExpression.__init__(self, parent_id, element, fei)
         self.process_name = element.attrib["process"]
 
-    def handle_event(self, event):
-        """Handle event."""
+    def handle_workitem(self, channel, workitem):
+        """Handle workitem."""
 
-        if self._can_be_ignored(event):
+        if self._can_be_ignored(workitem):
             return 'ignored'
 
         result = 'consumed'
-        if self.state == 'ready' and event.name == 'start':
+        if self.state == 'ready' and workitem.message == 'start':
             self.state = 'active'
             LOG.debug("Calling a subprocess process")
 
             assert self.process_name.startswith('$'), \
                     "Only process defs referenced from workitem are supported."
             ref = self.process_name[1:]
-            root = ET.fromstring(event.workitem.fields[ref])
+            root = ET.fromstring(workitem.fields[ref])
             assert root.tag == 'process'
             root.set('parent', self.id)
             pdef = ET.tostring(root)
-            event.channel.basic_publish(exchange='',
-                                        routing_key='bureaucrat',
-                                        body=pdef,
-                                        properties=pika.BasicProperties(
-                                            delivery_mode=2
-                                        ))
-        elif self.state == 'active' and event.name == 'completed' \
-                                    and event.target == self.id:
+            channel.basic_publish(exchange='',
+                                  routing_key='bureaucrat',
+                                  body=pdef,
+                                  properties=pika.BasicProperties(
+                                      delivery_mode=2
+                                 ))
+        elif self.state == 'active' and workitem.message == 'completed' \
+                                    and workitem.target == self.id:
             LOG.debug("Subprocess initiated in %s has completed" % self.id)
             self.state = 'completed'
             # reply to parent that the child is done
-            event.target = self.parent_id
-            event.workitem.event_name = "completed"
-            event.workitem.origin = self.id
-            event.trigger()
+            workitem.send(channel, message='completed', origin=self.id,
+                          target=self.parent_id)
         else:
-            LOG.debug("%r ignores %r" %(self, event))
+            LOG.debug("%r ignores %r" %(self, workitem))
             result = 'ignored'
 
         return result

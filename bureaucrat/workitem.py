@@ -1,132 +1,137 @@
 import logging
 import json
+import pika
 
-from taskqueue.workitem import Workitem as BaseWorkitem
-from taskqueue.workitem import WorkitemError as BaseWorkitemError
+from ConfigParser import NoSectionError
+from configs import Configs
 
 LOG = logging.getLogger(__name__)
 
-class WorkitemError(BaseWorkitemError):
+class WorkitemError(Exception):
     pass
 
-class Workitem(BaseWorkitem):
-    """Workitem specific to Bureaucrat."""
+class Workitem(object):
+    """Work item."""
 
-    mime_type = 'application/x-bureaucrat-workitem'
+    def __init__(self, fields=None):
+        """Work item constructor."""
 
-    @staticmethod
-    def create(event_name, target, origin=None):
+        if fields is None:
+            fields = {}
 
-        self = Workitem()
-        if origin is None:
-            origin = target
+        self._fields = fields
 
-        self._body = {
-            "fei": {
-                "event_name": event_name,
-                "origin": origin,
-                "target": target,
-                "worker_type": None
-            },
-            "fields": {
-            }
+        self._header = {
+            "message": None,
+            "origin": None,
+            "target": None
         }
-        return self
 
-    def _assert_body(self):
-        """Make sure body is loaded."""
-        if self._body is None:
-            raise WorkitemError("Workitem hasn't been loaded")
+    def __repr__(self):
+        """Return instance representation string."""
+        return "<Workitem[message='%(message)s', origin='%(origin)s', target='%(target)s']>" % self._header
 
-    def loads(self, blob):
+    @classmethod
+    def loads(cls, blob):
         try:
-            self._body = json.loads(blob)
-            assert self._body["fei"]["event_name"] is not None
-            assert self._body["fei"]["origin"] is not None
-            assert self._body["fei"]["target"] is not None
-            assert self._body["fields"] is not None
+            delivery = json.loads(blob)
+            assert delivery["header"]["message"] is not None
+            assert delivery["header"]["origin"] is not None
+            assert delivery["header"]["target"] is not None
+            assert delivery["fields"] is not None
+            self = cls(delivery["fields"])
+            self._header = delivery["header"]
+            return self
         except (ValueError, KeyError, TypeError, AssertionError):
-            raise WorkitemError("Can't parse workitem body")
-
-    def dumps(self):
-        self._assert_body()
-        return json.dumps(self._body)
-
-    def set_error(self, error):
-        self._assert_body()
-        self._body["error"] = error
-
-    def set_trace(self, trace):
-        self._assert_body()
-        self._body["trace"] = trace
+            raise WorkitemError("Can't parse workitem")
 
     @property
     def origin(self):
         """Return flow expression ID this workitem originates from."""
 
-        self._assert_body()
-        return self._body["fei"]["origin"]
-
-    @origin.setter
-    def origin(self, new_origin):
-        self._assert_body()
-        self._body["fei"]["origin"] = new_origin
+        return self._header["origin"]
 
     @property
     def target(self):
         """Return flow expression ID this workitem targets to."""
 
-        self._assert_body()
-        return self._body["fei"]["target"]
-
-    @target.setter
-    def target(self, new_target):
-        """Update workitem's target."""
-
-        self._assert_body()
-        self._body["fei"]["target"] = new_target
+        return self._header["target"]
 
     @property
     def target_pid(self):
         """Return target process ID."""
-        return self._body["fei"]["target"].split('_', 1)[0]
+        return self._header["target"].split('_', 1)[0]
 
     @property
     def fields(self):
         """Return workitem's fields accessible by workers."""
 
-        self._assert_body()
-        return self._body["fields"]
-
-    @fields.setter
-    def fields(self, new_fields):
-        """Update workitem's fields."""
-        self._assert_body()
-        self._body["fields"] = new_fields
+        return self._fields
 
     @property
-    def event_name(self):
-        """Return workitem's event name."""
+    def message(self):
+        """Return workitem's message name."""
 
-        self._assert_body()
-        return self._body["fei"]["event_name"]
+        return self._header["message"]
 
-    @event_name.setter
-    def event_name(self, new_name):
-        """Setter for event_name."""
-        self._assert_body()
-        self._body["fei"]["event_name"] = new_name
+    def send(self, channel, message, target, origin):
+        """Send a message to the target with the workitem attached."""
 
-    @property
-    def worker_type(self):
-        """Return type of worker this workitem was sent to."""
+        body = {
+            "header": {
+                "message": message,
+                "target": target,
+                "origin": origin
+            },
+            "fields": self._fields
+        }
+        channel.basic_publish(exchange='',
+                              routing_key="bureaucrat_events",
+                              body=json.dumps(body),
+                              properties=pika.BasicProperties(
+                                  delivery_mode=2,
+                                  content_type='application/x-bureaucrat-workitem'
+                              ))
 
-        self._assert_body()
-        return self._body["fei"]["worker_type"]
+    def elaborate(self, channel, participant, origin):
+        """Elaborate the workitem at a given participant."""
 
-    @worker_type.setter
-    def worker_type(self, wtype):
-        """Setter for worker_type."""
+        config = Configs()
 
-        self._assert_body()
-        self._body["fei"]["worker_type"] = wtype
+        try:
+            items = dict(config.items("taskqueue"))
+            queue_type = items.get("type", "taskqueue")
+        except NoSectionError:
+            LOG.debug("No task queue configs: setting default task queue type")
+            queue_type = "taskqueue"
+
+        if queue_type == 'taskqueue':
+            body = {
+                "header": {
+                    "message": 'response',
+                    "target": origin,
+                    "origin": origin
+                },
+                "fields": self._fields
+            }
+            channel.basic_publish(exchange='',
+                                  routing_key="worker_%s" % participant,
+                                  body=json.dumps(body),
+                                  properties=pika.BasicProperties(
+                                      delivery_mode=2,
+                                      content_type='application/x-bureaucrat-workitem'
+                                 ))
+        elif queue_type == 'celery':
+            body = {
+                "header": {
+                    "message": 'response',
+                    "target": origin,
+                    "origin": origin
+                },
+                "fields": self._fields
+            }
+            # TODO: reimplement to use AMQP channel
+            from participants.tasks import webhooks
+            eval("webhooks.%s.delay(body)" % participant)
+        else:
+            raise WorkitemError("Unknown task queue type: %s" % queue_type)

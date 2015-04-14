@@ -9,6 +9,8 @@ import pika
 from ConfigParser import ConfigParser, NoSectionError
 from optparse import OptionParser
 
+from configs import Configs
+
 LOG = logging.getLogger(__name__)
 
 def parse_cmdline(defaults):
@@ -68,8 +70,8 @@ class Daemon(object):
 
     pidfile = "/var/run/python-daemon.pid"
 
-    def __init__(self, config):
-        self.config = config
+    def __init__(self):
+        config = Configs()
         try:
             amqp_items  = dict(config.items("amqp"))
             amqp_host   = amqp_items.get("host", "localhost")
@@ -104,8 +106,9 @@ class Daemon(object):
 
         config = ConfigParser()
         config.read(options.config)
+        Configs(config)
 
-        daemon_obj = cls(config)
+        daemon_obj = cls()
 
         context = daemon.DaemonContext()
 

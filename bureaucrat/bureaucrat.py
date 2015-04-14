@@ -5,8 +5,7 @@ import traceback
 
 from daemonlib import Daemon
 from process import Process
-from workitem import Workitem
-from event import Event
+from workitem import Workitem, WorkitemError
 
 LOG = logging.getLogger(__name__)
 
@@ -28,12 +27,12 @@ class Bureaucrat(Daemon):
 
     pidfile = "/var/run/bureaucrat.pid"
 
-    def __init__(self, config):
+    def __init__(self):
         """Initialize application."""
 
         self.channel = None
         self.connection = None
-        super(Bureaucrat, self).__init__(config)
+        super(Bureaucrat, self).__init__()
 
     @log_trace
     def launch_process(self, channel, method, header, body):
@@ -43,34 +42,34 @@ class Bureaucrat(Daemon):
         LOG.debug("Header: %r" % header)
         LOG.debug("Body: %r" % body)
         process = Process.create(body)
-        workitem = Workitem.create('start', process.id)
-        event = Event(channel, workitem)
-        if process.handle_event(event):
+        workitem = Workitem()
+        # TODO: drop this hack!!!
+        workitem._header["message"] = 'start'
+        workitem._header["target"] = process.id
+        if process.handle_workitem(channel, workitem):
             LOG.debug("%r is completed" % process)
         process.suspend()
         channel.basic_ack(method.delivery_tag)
 
     @log_trace
-    def handle_event(self, channel, method, header, body):
-        """Handle event."""
+    def handle_workitem(self, channel, method, header, body):
+        """Handle workitem."""
 
         LOG.debug("Method: %r" % method)
         LOG.debug("Header: %r" % header)
-        LOG.debug("Handling event with Body: %r" % body)
+        LOG.debug("Handling workitem with Body: %r" % body)
         try:
-            workitem = Workitem()
-            workitem.loads(body)
+            workitem = Workitem.loads(body)
         except WorkitemError as err:
             # Report error and accept message
             LOG.error("%s" % err)
             channel.basic_ack(method.delivery_tag)
             return
 
-        event = Event(channel, workitem)
         process = Process.load("/tmp/processes/definition-%s" % \
                                workitem.target_pid, workitem.target_pid)
         process.resume()
-        if process.handle_event(event):
+        if process.handle_workitem(channel, workitem):
             LOG.debug("%r is completed" % process)
         process.suspend()
         channel.basic_ack(method.delivery_tag)
@@ -87,7 +86,7 @@ class Bureaucrat(Daemon):
         self.channel.queue_declare(queue="bureaucrat_events", durable=True,
                                    exclusive=False, auto_delete=False)
         self.channel.basic_consume(self.launch_process, queue="bureaucrat")
-        self.channel.basic_consume(self.handle_event, queue="bureaucrat_events")
+        self.channel.basic_consume(self.handle_workitem, queue="bureaucrat_events")
         self.channel.start_consuming()
 
     def cleanup(self, signum, frame):
