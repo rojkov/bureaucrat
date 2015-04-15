@@ -133,6 +133,45 @@ class FlowExpression(object):
             child.state = 'ready'
             child.reset_children()
 
+class Process(FlowExpression):
+    """A Process flow expression."""
+
+    allowed_child_types = get_supported_flowexpressions()
+
+    def handle_workitem(self, channel, workitem):
+        """Handle workitem in process instance."""
+        LOG.debug("Handling %r in %r" % (workitem, self))
+
+        if workitem.message == 'start' and workitem.target == self.id:
+            if len(self.children) > 0:
+                self.state = 'active'
+                workitem.send(channel, message='start', origin=self.id,
+                              target=self.children[0].id)
+            else:
+                self.state = 'completed'
+                workitem.send(channel, message='completed', origin=self.id,
+                              target=self.parent_id)
+            return 'consumed'
+
+        if self.state == 'active' and workitem.message == 'completed' \
+                                  and workitem.target == self.id:
+            for index, child in zip(range(0, len(self.children)), self.children):
+                if child.id == workitem.origin:
+                    if (index + 1) < len(self.children):
+                        workitem.send(channel, message='start', origin=self.id,
+                                      target="%s_%d" % (self.id, (index + 1)))
+                    else:
+                        self.state = 'completed'
+                        workitem.send(channel, message='completed',
+                                      origin=self.id, target=self.parent_id)
+                    return 'consumed'
+
+        for child in self.children:
+            if child.handle_workitem(channel, workitem) == 'consumed':
+                return 'consumed'
+
+        return 'ignored'
+
 class Sequence(FlowExpression):
     """A sequence activity."""
 
@@ -165,6 +204,8 @@ class Sequence(FlowExpression):
                               target=self.children[0].id)
             else:
                 self.state = 'completed'
+                workitem.send(channel, message='completed',
+                              origin=self.id, target=self.parent_id)
             return 'consumed'
 
         for child in self.children:

@@ -99,8 +99,8 @@ class Workitem(object):
         config = Configs()
 
         try:
-            items = dict(config.items("taskqueue"))
-            queue_type = items.get("type", "taskqueue")
+            items = dict(config.items("bureaucrat"))
+            queue_type = items.get("taskqueue_type", "taskqueue")
         except NoSectionError:
             LOG.debug("No task queue configs: setting default task queue type")
             queue_type = "taskqueue"

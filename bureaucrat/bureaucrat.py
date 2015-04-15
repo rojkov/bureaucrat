@@ -2,9 +2,10 @@ import sys
 import pika
 import logging
 import traceback
+import uuid
 
 from daemonlib import Daemon
-from process import Process
+from workflow import Workflow
 from workitem import Workitem, WorkitemError
 
 LOG = logging.getLogger(__name__)
@@ -41,14 +42,10 @@ class Bureaucrat(Daemon):
         LOG.debug("Method: %r" % method)
         LOG.debug("Header: %r" % header)
         LOG.debug("Body: %r" % body)
-        process = Process.create(body)
+        wflow = Workflow.create_from_string(body, "%s" % uuid.uuid4())
         workitem = Workitem()
-        # TODO: drop this hack!!!
-        workitem._header["message"] = 'start'
-        workitem._header["target"] = process.id
-        if process.handle_workitem(channel, workitem):
-            LOG.debug("%r is completed" % process)
-        process.suspend()
+        workitem.send(channel, message='start', target=wflow.process.id,
+                      origin='')
         channel.basic_ack(method.delivery_tag)
 
     @log_trace
@@ -66,12 +63,12 @@ class Bureaucrat(Daemon):
             channel.basic_ack(method.delivery_tag)
             return
 
-        process = Process.load("/tmp/processes/definition-%s" % \
-                               workitem.target_pid, workitem.target_pid)
-        process.resume()
-        if process.handle_workitem(channel, workitem):
-            LOG.debug("%r is completed" % process)
-        process.suspend()
+        if workitem.target == '':
+            LOG.debug("The process %s has finished" % workitem.origin)
+        else:
+            wflow = Workflow.load(workitem.target_pid)
+            wflow.process.handle_workitem(channel, workitem)
+            wflow.save()
         channel.basic_ack(method.delivery_tag)
 
     def run(self):
