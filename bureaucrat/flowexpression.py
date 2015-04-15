@@ -14,28 +14,30 @@ def get_supported_flowexpressions():
     return ('action', 'sequence', 'switch', 'while', 'all', 'call')
 
 class FlowExpressionError(Exception):
-    pass
+    """FlowExpression error."""
 
 def create_fe_from_element(parent_id, element, fei):
     """Create a flow expression instance from ElementTree.Element."""
 
     tag = element.tag
+    expr = None
     if tag == 'action':
-        return Action(parent_id, element, fei)
+        expr = Action(parent_id, element, fei)
     elif tag == 'sequence':
-        return Sequence(parent_id, element, fei)
+        expr = Sequence(parent_id, element, fei)
     elif tag == 'switch':
-        return Switch(parent_id, element, fei)
+        expr = Switch(parent_id, element, fei)
     elif tag == 'case':
-        return Case(parent_id, element, fei)
+        expr = Case(parent_id, element, fei)
     elif tag == 'while':
-        return While(parent_id, element, fei)
+        expr = While(parent_id, element, fei)
     elif tag == 'all':
-        return All(parent_id, element, fei)
+        expr = All(parent_id, element, fei)
     elif tag == 'call':
-        return Call(parent_id, element, fei)
+        expr = Call(parent_id, element, fei)
     else:
         raise FlowExpressionError("Unknown tag: %s" % tag)
+    return expr
 
 class FlowExpression(object):
     """Flow expression."""
@@ -48,7 +50,7 @@ class FlowExpression(object):
 
         self.fe_name = self.__class__.__name__.lower()
         assert element.tag == self.fe_name
-        LOG.debug("Creating %s" % self.fe_name)
+        LOG.debug("Creating %s", self.fe_name)
 
         self.state = 'ready'
         self.id = fei
@@ -62,9 +64,9 @@ class FlowExpression(object):
         el_index = 0
         for child in element:
             if child.tag in self.allowed_child_types:
-                fe = create_fe_from_element(self.id, child,
-                                            "%s_%d" % (fei, el_index))
-                self.children.append(fe)
+                fexpr = create_fe_from_element(self.id, child,
+                                               "%s_%d" % (fei, el_index))
+                self.children.append(fexpr)
                 el_index = el_index + 1
             else:
                 self.parse_non_child(child)
@@ -76,7 +78,7 @@ class FlowExpression(object):
     def __repr__(self):
         """Instance representation."""
         return "<%s[%s, state='%s']>" % (self.__class__.__name__, self,
-                                       self.state)
+                                         self.state)
 
     def parse_non_child(self, element):
         """Parse disallowed child element.
@@ -99,7 +101,7 @@ class FlowExpression(object):
 
     def reset_state(self, state):
         """Reset activity's state."""
-        LOG.debug("Resetting %s's state" % self.fe_name)
+        LOG.debug("Resetting %s's state", self.fe_name)
         assert state["type"] == self.fe_name
         assert state["id"] == self.id
         self.state = state["state"]
@@ -109,7 +111,7 @@ class FlowExpression(object):
 
     def handle_workitem(self, channel, workitem):
         """Handle workitem."""
-        raise NotImplemented()
+        raise NotImplementedError()
 
     def _can_be_ignored(self, workitem):
         """Check if workitem can be safely ignored."""
@@ -117,11 +119,11 @@ class FlowExpression(object):
         can_be_ignored = False
 
         if self.state == 'completed':
-            LOG.debug("%r is done already, %r is ignored" % (self, workitem))
+            LOG.debug("%r is done already, %r is ignored", self, workitem)
             can_be_ignored = True
         elif workitem.target is not None and \
                 not workitem.target.startswith(self.id):
-            LOG.debug("%r is not for %r" % (workitem, self))
+            LOG.debug("%r is not for %r", workitem, self)
             can_be_ignored = True
 
         return can_be_ignored
@@ -140,7 +142,7 @@ class Process(FlowExpression):
 
     def handle_workitem(self, channel, workitem):
         """Handle workitem in process instance."""
-        LOG.debug("Handling %r in %r" % (workitem, self))
+        LOG.debug("Handling %r in %r", workitem, self)
 
         if workitem.message == 'start' and workitem.target == self.id:
             if len(self.children) > 0:
@@ -235,24 +237,24 @@ class Action(FlowExpression):
 
         result = 'ignore'
         if self.state == 'ready' and workitem.message == 'start':
-            LOG.debug("Activate participant %s" % self.participant)
+            LOG.debug("Activate participant %s", self.participant)
             self.state = 'active'
             workitem.elaborate(channel, self.participant, self.id)
             result = 'consumed'
         elif self.state == 'active' and workitem.message == 'response':
-            LOG.debug("Got response for action %s" % self.id)
+            LOG.debug("Got response for action %s", self.id)
             self.state = 'completed'
             # reply to parent that the child is done
             workitem.send(channel, message='completed', origin=self.id,
                           target=self.parent_id)
             result = 'consumed'
         else:
-            LOG.debug("%r ignores %r" %(self, workitem))
+            LOG.debug("%r ignores %r", self, workitem)
 
         return result
 
 class CaseError(FlowExpressionError):
-    pass
+    """Case error."""
 
 class Case(FlowExpression):
     """Case element of switch activity."""
@@ -278,17 +280,17 @@ class Case(FlowExpression):
         """Check if conditions are met."""
 
         for cond in self.conditions:
-            if (eval(cond, {"workitem": workitem})):
-                LOG.debug("Condition %s evaluated to True" % cond)
+            if eval(cond, {"workitem": workitem}):
+                LOG.debug("Condition %s evaluated to True", cond)
                 return True
             else:
-                LOG.debug("Condition %s evaluated to False" % cond)
+                LOG.debug("Condition %s evaluated to False", cond)
 
         return False
 
     def handle_workitem(self, channel, workitem):
         """Handle workitem."""
-        LOG.debug("handling %r in %r" % (workitem, self))
+        LOG.debug("handling %r in %r", workitem, self)
 
         if self._can_be_ignored(workitem):
             return 'ignored'
@@ -305,17 +307,17 @@ class Case(FlowExpression):
                         self.state = 'completed'
                         workitem.send(channel, message='completed',
                                       target=self.parent_id, origin=self.id)
-                    LOG.debug("Send %r to continue from %r. Activities total: %d" % (workitem, self,
-                                                        len(self.children)))
+                    LOG.debug("Send %r to continue from %r. " + \
+                              "Activities total: %d",
+                              workitem, self, len(self.children))
                     return 'consumed'
-            else:
-                LOG.warning("No origin found")
+            LOG.warning("No origin found")
 
         if self.state == 'ready' and workitem.message == 'start' \
                                  and workitem.target == self.id:
 
             if not self.evaluate(workitem):
-                LOG.debug("Conditions for %r don't hold" % self)
+                LOG.debug("Conditions for %r don't hold", self)
                 return 'ignored'
 
             if len(self.children) > 0:
@@ -334,7 +336,7 @@ class Case(FlowExpression):
             if child.handle_workitem(channel, workitem) == 'consumed':
                 return 'consumed'
 
-        LOG.debug("%r was ignored in %r" % (workitem, self))
+        LOG.debug("%r was ignored in %r", workitem, self)
         return 'ignored'
 
 class Switch(FlowExpression):
@@ -345,7 +347,7 @@ class Switch(FlowExpression):
     def handle_workitem(self, channel, workitem):
         """Handle workitem."""
 
-        LOG.debug("Handling %r in %r" % (workitem, self))
+        LOG.debug("Handling %r in %r", workitem, self)
         if self._can_be_ignored(workitem):
             return 'ignored'
 
@@ -365,7 +367,7 @@ class Switch(FlowExpression):
                                   target=case.id)
                     break
                 else:
-                    LOG.debug("Condition doesn't hold for %r" % case)
+                    LOG.debug("Condition doesn't hold for %r", case)
             else:
                 self.state = 'completed'
             return 'consumed'
@@ -377,7 +379,7 @@ class Switch(FlowExpression):
         return 'ignored'
 
 class WhileError(FlowExpressionError):
-    pass
+    """While error."""
 
 class While(FlowExpression):
     """While activity."""
@@ -403,11 +405,11 @@ class While(FlowExpression):
         """Check if conditions are met."""
 
         for cond in self.conditions:
-            if (eval(cond, {"workitem": workitem})):
-                LOG.debug("Condition %s evaluated to True" % cond)
+            if eval(cond, {"workitem": workitem}):
+                LOG.debug("Condition %s evaluated to True", cond)
                 return True
             else:
-                LOG.debug("Condition %s evaluated to False" % cond)
+                LOG.debug("Condition %s evaluated to False", cond)
 
         return False
 
@@ -421,7 +423,7 @@ class While(FlowExpression):
                                  and workitem.target == self.id:
 
             if not self.evaluate(workitem):
-                LOG.debug("Conditions for %r don't hold" % self)
+                LOG.debug("Conditions for %r don't hold", self)
                 self.state = 'completed'
                 workitem.send(channel, message='completed', origin=self.id,
                               target=self.parent_id)
@@ -455,11 +457,11 @@ class While(FlowExpression):
                             workitem.send(channel, message='start',
                                           origin=self.id,
                                           target=self.children[0].id)
-                    LOG.debug("Trigger %r to continue from %r. Activities total: %d" % (workitem, self,
-                                                        len(self.children)))
+                    LOG.debug("Trigger %r to continue from %r. " + \
+                              "Activities total: %d",
+                              workitem, self, len(self.children))
                     return 'consumed'
-            else:
-                LOG.warning("No origin found")
+            LOG.warning("No origin found")
 
         for child in self.children:
             if child.handle_workitem(channel, workitem) == 'consumed':
@@ -540,16 +542,16 @@ class Call(FlowExpression):
                                   body=pdef,
                                   properties=pika.BasicProperties(
                                       delivery_mode=2
-                                 ))
+                                  ))
         elif self.state == 'active' and workitem.message == 'completed' \
                                     and workitem.target == self.id:
-            LOG.debug("Subprocess initiated in %s has completed" % self.id)
+            LOG.debug("Subprocess initiated in %s has completed", self.id)
             self.state = 'completed'
             # reply to parent that the child is done
             workitem.send(channel, message='completed', origin=self.id,
                           target=self.parent_id)
         else:
-            LOG.debug("%r ignores %r" %(self, workitem))
+            LOG.debug("%r ignores %r", self, workitem)
             result = 'ignored'
 
         return result

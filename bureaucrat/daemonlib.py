@@ -26,7 +26,7 @@ def parse_cmdline(defaults):
     parser.add_option("-p", "--pid-file", dest="pidfile",
                       default=defaults["pidfile"])
 
-    (options, args) = parser.parse_args()
+    (options, _) = parser.parse_args()
     return options
 
 class PidFile(object):

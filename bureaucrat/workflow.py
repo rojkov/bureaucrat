@@ -67,7 +67,7 @@ class Workflow(object):
         except NoSectionError:
             process_dir = DEFAULT_PROCESS_DIR
         pdef_path = os.path.join(process_dir, "definition-%s" % process_id)
-        LOG.debug("Load a process definition from %s" % pdef_path)
+        LOG.debug("Load a process definition from %s", pdef_path)
         tree = ET.parse(pdef_path)
         xmlelement = tree.getroot()
         assert xmlelement.tag == 'process'

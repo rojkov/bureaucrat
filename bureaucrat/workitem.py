@@ -8,7 +8,11 @@ from configs import Configs
 LOG = logging.getLogger(__name__)
 
 class WorkitemError(Exception):
-    pass
+    """Workitem error."""
+
+
+WORKITEM_MIME_TYPE = 'application/x-bureaucrat-workitem'
+
 
 class Workitem(object):
     """Work item."""
@@ -29,10 +33,11 @@ class Workitem(object):
 
     def __repr__(self):
         """Return instance representation string."""
-        return "<Workitem[message='%(message)s', origin='%(origin)s', target='%(target)s']>" % self._header
+        return "<Workitem[msg=%(message)s, origin=%(origin)s, target=%(target)s]>" % self._header
 
     @classmethod
     def loads(cls, blob):
+        """Load workitem from JSON formatted string."""
         try:
             delivery = json.loads(blob)
             assert delivery["header"]["message"] is not None
@@ -90,7 +95,7 @@ class Workitem(object):
                               body=json.dumps(body),
                               properties=pika.BasicProperties(
                                   delivery_mode=2,
-                                  content_type='application/x-bureaucrat-workitem'
+                                  content_type=WORKITEM_MIME_TYPE
                               ))
 
     def elaborate(self, channel, participant, origin):
@@ -119,8 +124,8 @@ class Workitem(object):
                                   body=json.dumps(body),
                                   properties=pika.BasicProperties(
                                       delivery_mode=2,
-                                      content_type='application/x-bureaucrat-workitem'
-                                 ))
+                                      content_type=WORKITEM_MIME_TYPE
+                                  ))
         elif queue_type == 'celery':
             body = {
                 "header": {
