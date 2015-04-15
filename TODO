@@ -1,0 +1,15 @@
+* Refactor the config storage to ease access to preferences
+
+* Move AMQP queue names to config.ini
+
+* Drop eval() from workitem.py
+
+* Make FlowExpression state names be symbols, not strings
+
+* 'consumed' and 'ignored' must be symbols, not strings
+
+* The methods handle_workitem() often look similar, consider refactoring
+
+* Avoid duplicate code in unittests
+
+* Consider merging process definition and process state files into one
