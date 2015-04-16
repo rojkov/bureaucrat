@@ -1,5 +1,6 @@
 import logging
 import pika
+import json
 import sexpdata
 from HTMLParser import HTMLParser
 import xml.etree.ElementTree as ET
@@ -135,10 +136,21 @@ class FlowExpression(object):
             child.state = 'ready'
             child.reset_children()
 
+class ProcessError(FlowExpressionError):
+    """Process error."""
+
 class Process(FlowExpression):
     """A Process flow expression."""
 
     allowed_child_types = get_supported_flowexpressions()
+
+    def parse_non_child(self, element):
+        """Parse process's fields."""
+
+        if element.tag == 'fields':
+            self.context = json.loads(element.text)
+        else:
+            raise ProcessError("Unknown element: %s" % element.tag)
 
     def handle_workitem(self, channel, workitem):
         """Handle workitem in process instance."""
@@ -147,6 +159,7 @@ class Process(FlowExpression):
         if workitem.message == 'start' and workitem.target == self.id:
             if len(self.children) > 0:
                 self.state = 'active'
+                workitem = Workitem(self.context)
                 workitem.send(channel, message='start', origin=self.id,
                               target=self.children[0].id)
             else:
