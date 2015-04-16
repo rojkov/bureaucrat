@@ -135,8 +135,31 @@ class Workitem(object):
                 },
                 "fields": self._fields
             }
-            # TODO: reimplement to use AMQP channel
-            from participants.tasks import webhooks
-            eval("webhooks.%s.delay(body)" % participant)
+            # This is a message in the format acceptable by Celery.
+            # The exact format can be found in
+            # celery.app.amqp.TaskProducer.publish_task()
+            celery_msg = {
+                "task": participant,
+                "id": self.target_pid,
+                "args": (body, ),
+                "kwargs": {},
+                "retries": 0,
+                "eta": None,
+                "expires": None,
+                "utc": True,
+                "callbacks": None,
+                "errbacks": None,
+                "timelimit": (None, None),
+                "taskset": None,
+                "chord": None
+            }
+            channel.basic_publish(exchange='celery',
+                                  routing_key="celery",
+                                  body=json.dumps(celery_msg),
+                                  properties=pika.BasicProperties(
+                                      delivery_mode=2,
+                                      content_type='application/json',
+                                      content_encoding='utf-8'
+                                  ))
         else:
             raise WorkitemError("Unknown task queue type: %s" % queue_type)
