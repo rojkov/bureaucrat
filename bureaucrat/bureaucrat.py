@@ -84,6 +84,7 @@ class Bureaucrat(Daemon):
                                    exclusive=False, auto_delete=False)
         self.channel.queue_declare(queue="bureaucrat_events", durable=True,
                                    exclusive=False, auto_delete=False)
+        self.channel.basic_qos(prefetch_count=1)
         self.channel.basic_consume(self.launch_process, queue="bureaucrat")
         self.channel.basic_consume(self.handle_workitem,
                                    queue="bureaucrat_events")
