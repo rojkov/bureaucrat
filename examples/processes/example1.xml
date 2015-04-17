@@ -1,11 +1,18 @@
 <?xml version="1.0"?>
 <process name="example1">
+    <context>
+        <property name="testprop1" type="bool">0</property>
+        <property name="testprop2" type="str">hello world</property>
+        <property name="testprop3" type="int">123456</property>
+        <property name="testprop4" type="float">0.5</property>
+        <property name="testprop5" type="json">{"hello": "world"}</property>
+    </context>
     <sequence>
         <action participant="participant1" />
         <action participant="participant2" />
         <switch>
             <case>
-                <condition>1 &gt; 2</condition>
+                <condition>workitem.fields["testprop1"]</condition>
                 <action participant="participant1"></action>
                 <action participant="participant2"></action>
             </case>

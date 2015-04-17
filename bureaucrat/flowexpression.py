@@ -6,6 +6,7 @@ from HTMLParser import HTMLParser
 import xml.etree.ElementTree as ET
 
 from workitem import Workitem
+from utils import context2dict
 
 LOG = logging.getLogger(__name__)
 
@@ -56,7 +57,7 @@ class FlowExpression(object):
         self.state = 'ready'
         self.id = fei
         self.parent_id = parent_id
-        self.context = None
+        self.context = {}
         self.children = []
 
         if len(self.allowed_child_types) == 0:
@@ -147,8 +148,8 @@ class Process(FlowExpression):
     def parse_non_child(self, element):
         """Parse process's fields."""
 
-        if element.tag == 'fields':
-            self.context = json.loads(element.text)
+        if element.tag == 'context':
+            self.context = context2dict(element)
         else:
             raise ProcessError("Unknown element: %s" % element.tag)
 
