@@ -3,6 +3,7 @@ from __future__ import absolute_import
 import logging
 import pika
 import json
+import time
 from HTMLParser import HTMLParser
 import xml.etree.ElementTree as ET
 
@@ -14,7 +15,7 @@ LOG = logging.getLogger(__name__)
 def get_supported_flowexpressions():
     """Return list of supported types of flow expressions."""
     # TODO: calculate supported activities dynamically and cache
-    return ('action', 'sequence', 'switch', 'while', 'all', 'call')
+    return ('action', 'sequence', 'switch', 'while', 'all', 'call', 'delay')
 
 class FlowExpressionError(Exception):
     """FlowExpression error."""
@@ -38,6 +39,8 @@ def create_fe_from_element(parent_id, element, fei):
         expr = All(parent_id, element, fei)
     elif tag == 'call':
         expr = Call(parent_id, element, fei)
+    elif tag == 'delay':
+        expr = Delay(parent_id, element, fei)
     else:
         raise FlowExpressionError("Unknown tag: %s" % tag)
     return expr
@@ -258,6 +261,45 @@ class Action(FlowExpression):
             result = 'consumed'
         elif self.state == 'active' and workitem.message == 'response':
             LOG.debug("Got response for action %s", self.id)
+            self.state = 'completed'
+            # reply to parent that the child is done
+            workitem.send(channel, message='completed', origin=self.id,
+                          target=self.parent_id)
+            result = 'consumed'
+        else:
+            LOG.debug("%r ignores %r", self, workitem)
+
+        return result
+
+class Delay(FlowExpression):
+    """A delay activity."""
+
+    def __init__(self, parent_id, element, fei):
+        """Constructor."""
+
+        FlowExpression.__init__(self, parent_id, element, fei)
+        self.duration = int(element.attrib["duration"])
+
+    def __str__(self):
+        """String representation."""
+        return "%s[duration=%s]" % (self.id, self.duration)
+
+    def handle_workitem(self, channel, workitem):
+        """Handle workitem."""
+
+        if self._can_be_ignored(workitem):
+            return 'ignored'
+
+        result = 'ignore'
+        if self.state == 'ready' and workitem.message == 'start':
+            LOG.debug("Wait for %s", self.duration)
+            self.state = 'active'
+            instant = int(time.time()) + self.duration
+            workitem.schedule_event(channel, target=self.id, code="timeout",
+                                    instant=instant)
+            result = 'consumed'
+        elif self.state == 'active' and workitem.message == 'timeout':
+            LOG.debug("Time is out for %s", self.id)
             self.state = 'completed'
             # reply to parent that the child is done
             workitem.send(channel, message='completed', origin=self.id,

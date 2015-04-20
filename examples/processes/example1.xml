@@ -32,5 +32,6 @@
         <action participant="participant1"></action>
         <action participant="participant2"></action>
     </all>
+    <delay duration="120" />
     <call process="$some_process" />
 </process>

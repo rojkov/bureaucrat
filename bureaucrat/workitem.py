@@ -100,6 +100,23 @@ class Workitem(object):
                                   content_type=WORKITEM_MIME_TYPE
                               ))
 
+    def schedule_event(self, channel, instant, code, target):
+        """Schedule event for the context."""
+        body = {
+            "instant": instant,
+            "code": code,
+            "target": target,
+            "context": self._fields
+        }
+        channel.basic_publish(exchange='',
+                              routing_key="bureaucrat_schedule",
+                              body=json.dumps(body),
+                              properties=pika.BasicProperties(
+                                  delivery_mode=2,
+                                  content_type='application/json',
+                                  content_encoding='utf-8'
+                              ))
+
     def elaborate(self, channel, participant, origin):
         """Elaborate the workitem at a given participant."""
 

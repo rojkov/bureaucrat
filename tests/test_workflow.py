@@ -60,6 +60,7 @@ class TestWorkflow(unittest.TestCase):
         os.rmdir(os.path.join(PROCESS_DIR, "process"))
         os.unlink(os.path.join(PROCESS_DIR, "definition/fake-id"))
         os.rmdir(os.path.join(PROCESS_DIR, "definition"))
+        os.rmdir(os.path.join(PROCESS_DIR, "schedule"))
         os.removedirs(PROCESS_DIR)
 
     def test_create_from_string(self):

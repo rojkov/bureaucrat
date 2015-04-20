@@ -2,29 +2,25 @@ import unittest
 import xml.etree.ElementTree as ET
 
 from mock import Mock
+from mock import patch
 
-from bureaucrat.flowexpression import Call
+from bureaucrat.flowexpression import Delay
 
 processdsc = """<?xml version="1.0"?>
-<call process="$some_process_name" />
+<delay duration="120" />
 """
 
-subprocessdsc = """<?xml version="1.0"?>
-<process>
-    <action participant="test1" />
-</process>
-"""
-
-class TestCall(unittest.TestCase):
-    """Tests for Call activity."""
+class TestDelay(unittest.TestCase):
+    """Tests for Delay activity."""
 
     def setUp(self):
         """Set up SUT."""
         xml_element = ET.fromstring(processdsc)
-        self.fexpr = Call('fake-id', xml_element, 'fake-id_0')
+        self.fexpr = Delay('fake-id', xml_element, 'fake-id_0')
         self.wi = Mock()
         self.ch = Mock()
         self.wi.send = Mock()
+        self.wi.schedule_event = Mock()
 
     # TODO: move these two cases to a base class
     def test_handle_workitem_completed_state(self):
@@ -43,26 +39,27 @@ class TestCall(unittest.TestCase):
         self.assertTrue(result == 'ignored')
 
     def test_handle_workitem_start(self):
-        """Test Call.handle_workitem() with 'start' message."""
-
+        """Test Delay.handle_workitem() with 'start' message."""
         self.wi.message = 'start'
         self.wi.target = 'fake-id_0'
         self.wi.origin = 'fake-id'
-        self.wi.fields = {
-            "some_process_name": subprocessdsc
-        }
         self.fexpr.state = 'ready'
-        result = self.fexpr.handle_workitem(self.ch, self.wi)
-        self.assertTrue(result == 'consumed')
-        self.assertTrue(self.fexpr.state == 'active')
-        # TODO: assert that process launch event was sent to dispatcher
+        with patch('bureaucrat.flowexpression.time.time') as mock_time:
+            mock_time.return_value = 10000
+            result = self.fexpr.handle_workitem(self.ch, self.wi)
+            self.assertTrue(result == 'consumed')
+            self.assertTrue(self.fexpr.state == 'active')
+            self.wi.schedule_event.assert_called_once_with(self.ch,
+                                                           code='timeout',
+                                                           instant=10120,
+                                                           target='fake-id_0')
 
-    def test_handle_workitem_completed(self):
-        """Test Call.handle_workitem() with 'completed' message."""
+    def test_handle_workitem_timeout(self):
+        """Test Delay.handle_workitem() with 'timeout' message."""
 
-        self.wi.message = 'completed'
+        self.wi.message = 'timeout'
         self.wi.target = 'fake-id_0'
-        self.wi.origin = 'other-fake-id'
+        self.wi.origin = 'fake-id_0'
         self.wi.fields = {}
         self.fexpr.state = 'active'
         result = self.fexpr.handle_workitem(self.ch, self.wi)
