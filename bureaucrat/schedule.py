@@ -62,6 +62,7 @@ class Schedule(object):
 
         LOG.debug("Handling alarm")
         with open(LOCK_FILE, 'w') as fd:
+            fcntl.lockf(fd, fcntl.LOCK_EX)
             timestamp = int(time.time())
             for fname in os.listdir(self.schedule_dir):
                 if timestamp >= int(fname):
