@@ -2,6 +2,7 @@ import unittest
 
 import xml.etree.ElementTree as ET
 from mock import Mock
+from mock import patch
 
 from bureaucrat.flowexpression import Process
 
@@ -29,12 +30,16 @@ class TestProcess(unittest.TestCase):
         self.wi.target = 'fake-id'
         self.wi.origin = ''
         self.fexpr.state = 'ready'
-        result = self.fexpr.handle_workitem(self.ch, self.wi)
-        self.assertTrue(result == 'consumed')
-        self.assertTrue(self.fexpr.state == 'active')
-        self.wi.send.assert_called_once_with(self.ch, message='start',
-                                             target='fake-id_0',
-                                             origin='fake-id')
+        with patch('bureaucrat.flowexpression.Workitem') as mock_wiclass:
+            mock_wi = Mock()
+            mock_wiclass.return_value = mock_wi
+            result = self.fexpr.handle_workitem(self.ch, self.wi)
+            self.assertTrue(result == 'consumed')
+            self.assertTrue(self.fexpr.state == 'active')
+            mock_wiclass.assert_called_once()
+            mock_wi.send.assert_called_once_with(self.ch, message='start',
+                                                 target='fake-id_0',
+                                                 origin='fake-id')
 
     def test_handle_workitem_completed1(self):
         """Test Process.handle_workitem() with completed msg from first child."""
