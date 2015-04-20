@@ -1,9 +1,11 @@
+from __future__ import absolute_import
+
 import logging
 import json
 import pika
 
 from ConfigParser import NoSectionError
-from configs import Configs
+from bureaucrat.configs import Configs
 
 LOG = logging.getLogger(__name__)
 

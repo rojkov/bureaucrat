@@ -4,6 +4,8 @@ Ideally this module should not exist, but at the moment it contains
 the code that would be duplicated otherwise.
 """
 
+from __future__ import absolute_import
+
 import json
 
 def context2dict(element):

@@ -1,9 +1,11 @@
+from __future__ import absolute_import
+
 import json
 import pika
 import xml.etree.ElementTree as ET
 
-from configs import Configs
-from utils import context2dict
+from bureaucrat.configs import Configs
+from bureaucrat.utils import context2dict
 
 class Launcher(object):
     """Launches workflow processes."""

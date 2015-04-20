@@ -1,12 +1,13 @@
+from __future__ import absolute_import
+
 import logging
 import pika
 import json
-import sexpdata
 from HTMLParser import HTMLParser
 import xml.etree.ElementTree as ET
 
-from workitem import Workitem
-from utils import context2dict
+from bureaucrat.workitem import Workitem
+from bureaucrat.utils import context2dict
 
 LOG = logging.getLogger(__name__)
 

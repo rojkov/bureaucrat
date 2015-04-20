@@ -26,6 +26,9 @@ setup(
         "License :: OSI Approved :: GPL License",
     ],
     entry_points={
+        'console_scripts': [
+            'bureaucrat = bureaucrat.bureaucrat:Bureaucrat.main'
+        ],
         'worker.plugins': [
             'participant1 = bureaucrat.workers.participant1:Worker.factory',
             'participant2 = bureaucrat.workers.participant2:Worker.factory'

@@ -1,3 +1,5 @@
+from __future__ import absolute_import
+
 import logging, logging.config
 import daemon
 import signal
@@ -9,7 +11,7 @@ import pika
 from ConfigParser import ConfigParser, NoSectionError
 from optparse import OptionParser
 
-from configs import Configs
+from bureaucrat.configs import Configs
 
 LOG = logging.getLogger(__name__)
 

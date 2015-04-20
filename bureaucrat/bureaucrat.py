@@ -1,12 +1,14 @@
+from __future__ import absolute_import
+
 import sys
 import pika
 import logging
 import traceback
 import uuid
 
-from daemonlib import Daemon
-from workflow import Workflow
-from workitem import Workitem, WorkitemError
+from bureaucrat.daemonlib import Daemon
+from bureaucrat.workflow import Workflow
+from bureaucrat.workitem import Workitem, WorkitemError
 
 LOG = logging.getLogger(__name__)
 
@@ -97,6 +99,3 @@ class Bureaucrat(Daemon):
         self.channel.stop_consuming()
         self.connection.close()
         sys.exit(0)
-
-if __name__ == '__main__':
-    Bureaucrat.main()

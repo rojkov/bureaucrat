@@ -1,3 +1,5 @@
+from __future__ import absolute_import
+
 import logging
 import json
 import os
@@ -6,8 +8,8 @@ import os.path
 import xml.etree.ElementTree as ET
 from ConfigParser import NoSectionError
 
-from configs import Configs
-from flowexpression import Process
+from bureaucrat.configs import Configs
+from bureaucrat.flowexpression import Process
 
 LOG = logging.getLogger(__name__)
 
