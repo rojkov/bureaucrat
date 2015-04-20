@@ -14,6 +14,15 @@ LOG = logging.getLogger(__name__)
 # Path to directory where process snapshots are stored
 DEFAULT_PROCESS_DIR = '/tmp/processes'
 
+
+def setup_storage(storage_dir):
+    """Set up storage if it hasn't been set up yet."""
+
+    if not os.path.isdir(storage_dir):
+        os.makedirs(os.path.join(storage_dir, "definition"))
+        os.makedirs(os.path.join(storage_dir, "process"))
+
+
 class Workflow(object):
     """Represnts workflow instance."""
 
@@ -36,10 +45,9 @@ class Workflow(object):
         except NoSectionError:
             process_dir = DEFAULT_PROCESS_DIR
 
-        if not os.path.isdir(process_dir):
-            os.makedirs(process_dir)
+        setup_storage(process_dir)
 
-        defpath = os.path.join(process_dir, "definition-%s" % pid)
+        defpath = os.path.join(process_dir, "definition/%s" % pid)
         with open(defpath, 'w') as fhdl:
             fhdl.write(pdef)
 
@@ -66,7 +74,7 @@ class Workflow(object):
             process_dir = items.get("process_dir", DEFAULT_PROCESS_DIR)
         except NoSectionError:
             process_dir = DEFAULT_PROCESS_DIR
-        pdef_path = os.path.join(process_dir, "definition-%s" % process_id)
+        pdef_path = os.path.join(process_dir, "definition/%s" % process_id)
         LOG.debug("Load a process definition from %s", pdef_path)
         tree = ET.parse(pdef_path)
         xmlelement = tree.getroot()
@@ -78,7 +86,7 @@ class Workflow(object):
 
         process = Process(parent_id, xmlelement, process_id)
         with open(os.path.join(process_dir,
-                               "process-%s" % process.id), 'r') as fhdl:
+                               "process/%s" % process.id), 'r') as fhdl:
             snapshot = json.load(fhdl)
             process.reset_state(snapshot)
         return Workflow(process)
@@ -94,9 +102,8 @@ class Workflow(object):
         except NoSectionError:
             process_dir = DEFAULT_PROCESS_DIR
 
-        if not os.path.isdir(process_dir):
-            os.makedirs(process_dir)
+        setup_storage(process_dir)
 
-        with open(os.path.join(process_dir, "process-%s" % self.process.id),
+        with open(os.path.join(process_dir, "process/%s" % self.process.id),
                   'w') as fhdl:
             json.dump(self.process.snapshot(), fhdl)
