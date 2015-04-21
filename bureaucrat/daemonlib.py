@@ -21,7 +21,7 @@ def parse_cmdline(defaults):
     parser = OptionParser()
     parser.add_option("-f", "--foreground", dest="foreground",
                       action="store_true", default=False,
-                      help="don't deamonize")
+                      help="don't daemonize")
     parser.add_option("-c", "--config", dest="config",
                       default="/etc/taskqueue/config.ini",
                       help="path to config file")
