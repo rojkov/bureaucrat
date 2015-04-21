@@ -45,7 +45,7 @@ def main():
     connection = pika.BlockingConnection(parameters)
     channel = connection.channel()
     channel.basic_publish(exchange='',
-                          routing_key='bureaucrat_events',
+                          routing_key='bureaucrat_msgs',
                           body=event,
                           properties=pika.BasicProperties(
                               delivery_mode=2

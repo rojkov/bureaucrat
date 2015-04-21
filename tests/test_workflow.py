@@ -39,7 +39,7 @@ processdsc = """<?xml version="1.0"?>
 </process>
 """
 
-PROCESS_DIR = '/tmp/unittest-processes'
+STORAGE_DIR = '/tmp/unittest-processes'
 
 class TestWorkflow(unittest.TestCase):
     """Tests for Workflow."""
@@ -49,19 +49,19 @@ class TestWorkflow(unittest.TestCase):
 
         confparser = ConfigParser()
         confparser.add_section('bureaucrat')
-        confparser.set('bureaucrat', 'process_dir', PROCESS_DIR)
-        Configs(confparser)
+        confparser.set('bureaucrat', 'storage_dir', STORAGE_DIR)
+        Configs.instance(confparser)
         self.wflow = Workflow.create_from_string(processdsc, 'fake-id')
 
     def tearDown(self):
         """Clean up environment."""
-        Configs._config = None
-        os.unlink(os.path.join(PROCESS_DIR, "process/fake-id"))
-        os.rmdir(os.path.join(PROCESS_DIR, "process"))
-        os.unlink(os.path.join(PROCESS_DIR, "definition/fake-id"))
-        os.rmdir(os.path.join(PROCESS_DIR, "definition"))
-        os.rmdir(os.path.join(PROCESS_DIR, "schedule"))
-        os.removedirs(PROCESS_DIR)
+        Configs._instance = None
+        os.unlink(os.path.join(STORAGE_DIR, "process/fake-id"))
+        os.rmdir(os.path.join(STORAGE_DIR, "process"))
+        os.unlink(os.path.join(STORAGE_DIR, "definition/fake-id"))
+        os.rmdir(os.path.join(STORAGE_DIR, "definition"))
+        os.rmdir(os.path.join(STORAGE_DIR, "schedule"))
+        os.removedirs(STORAGE_DIR)
 
     def test_create_from_string(self):
         """Test Workflow.create_from_string()."""

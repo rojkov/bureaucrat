@@ -4,7 +4,6 @@ import logging
 import json
 import pika
 
-from ConfigParser import NoSectionError
 from bureaucrat.configs import Configs
 
 LOG = logging.getLogger(__name__)
@@ -93,7 +92,7 @@ class Workitem(object):
             "fields": self._fields
         }
         channel.basic_publish(exchange='',
-                              routing_key="bureaucrat_events",
+                              routing_key=Configs.instance().message_queue,
                               body=json.dumps(body),
                               properties=pika.BasicProperties(
                                   delivery_mode=2,
@@ -120,16 +119,9 @@ class Workitem(object):
     def elaborate(self, channel, participant, origin):
         """Elaborate the workitem at a given participant."""
 
-        config = Configs()
+        config = Configs.instance()
 
-        try:
-            items = dict(config.items("bureaucrat"))
-            queue_type = items.get("taskqueue_type", "taskqueue")
-        except NoSectionError:
-            LOG.debug("No task queue configs: setting default task queue type")
-            queue_type = "taskqueue"
-
-        if queue_type == 'taskqueue':
+        if config.taskqueue_type == 'taskqueue':
             body = {
                 "header": {
                     "message": 'response',
@@ -145,7 +137,7 @@ class Workitem(object):
                                       delivery_mode=2,
                                       content_type=WORKITEM_MIME_TYPE
                                   ))
-        elif queue_type == 'celery':
+        elif config.taskqueue_type == 'celery':
             body = {
                 "header": {
                     "message": 'response',

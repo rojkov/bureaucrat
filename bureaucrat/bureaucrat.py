@@ -12,6 +12,7 @@ from bureaucrat.daemonlib import Daemon
 from bureaucrat.workflow import Workflow
 from bureaucrat.workitem import Workitem, WorkitemError
 from bureaucrat.schedule import Schedule
+from bureaucrat.configs import Configs
 
 LOG = logging.getLogger(__name__)
 
@@ -98,21 +99,22 @@ class Bureaucrat(Daemon):
     def run(self):
         """Event cycle."""
 
+        config = Configs.instance()
         LOG.debug("create connection")
-        self.connection = pika.BlockingConnection(self.amqp_params)
+        self.connection = pika.BlockingConnection(config.amqp_params)
         LOG.debug("Bureaucrat connected")
         self.channel = self.connection.channel()
         self.schedule = Schedule(self.channel)
         self.channel.queue_declare(queue="bureaucrat", durable=True,
                                    exclusive=False, auto_delete=False)
-        self.channel.queue_declare(queue="bureaucrat_events", durable=True,
+        self.channel.queue_declare(queue=config.message_queue, durable=True,
                                    exclusive=False, auto_delete=False)
         self.channel.queue_declare(queue="bureaucrat_schedule", durable=True,
                                    exclusive=False, auto_delete=False)
         self.channel.basic_qos(prefetch_count=1)
         self.channel.basic_consume(self.launch_process, queue="bureaucrat")
         self.channel.basic_consume(self.handle_workitem,
-                                   queue="bureaucrat_events")
+                                   queue=config.message_queue)
         self.channel.basic_consume(self.add_schedule,
                                    queue="bureaucrat_schedule")
         signal.signal(signal.SIGALRM, self.handle_alarm)

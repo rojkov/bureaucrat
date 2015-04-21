@@ -8,7 +8,7 @@ import os
 import fcntl
 import pika
 
-from ConfigParser import ConfigParser, NoSectionError
+from ConfigParser import ConfigParser
 from optparse import OptionParser
 
 from bureaucrat.configs import Configs
@@ -72,22 +72,6 @@ class Daemon(object):
 
     pidfile = "/var/run/python-daemon.pid"
 
-    def __init__(self):
-        config = Configs()
-        try:
-            amqp_items  = dict(config.items("amqp"))
-            amqp_host   = amqp_items.get("host", "localhost")
-            amqp_user   = amqp_items.get("user", "guest")
-            amqp_passwd = amqp_items.get("passwd", "guest")
-            amqp_vhost  = amqp_items.get("vhost", "/")
-            credentials = pika.PlainCredentials(amqp_user, amqp_passwd)
-            self.amqp_params = pika.ConnectionParameters(
-                credentials=credentials,
-                host=amqp_host,
-                virtual_host=amqp_vhost)
-        except NoSectionError:
-            self.amqp_params = pika.ConnectionParameters(host="localhost")
-
     def cleanup(self, signum, frame):
         """Abstract cleanup."""
         raise NotImplementedError
@@ -108,7 +92,7 @@ class Daemon(object):
 
         config = ConfigParser()
         config.read(options.config)
-        Configs(config)
+        Configs.instance(config)
 
         daemon_obj = cls()
 

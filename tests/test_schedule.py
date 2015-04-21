@@ -10,7 +10,7 @@ from mock import Mock
 from bureaucrat.schedule import Schedule
 from bureaucrat.configs import Configs
 
-PROCESS_DIR = '/tmp/unittest-processes'
+STORAGE_DIR = '/tmp/unittest-processes'
 SCHEDULES = """[{"destination":"fake-id","code":"timeout"}]"""
 
 class TestSchedule(unittest.TestCase):
@@ -20,14 +20,14 @@ class TestSchedule(unittest.TestCase):
         """Set up SUT."""
         confparser = ConfigParser()
         confparser.add_section('bureaucrat')
-        confparser.set('bureaucrat', 'process_dir', PROCESS_DIR)
-        Configs(confparser)
+        confparser.set('bureaucrat', 'storage_dir', STORAGE_DIR)
+        Configs.instance(confparser)
         self.ch = Mock()
         self.schedule = Schedule(self.ch)
 
     def tearDown(self):
         """Clean up environment."""
-        Configs._config = None
+        Configs._instance = None
 
     def test_register(self):
         """Test Schedule.register()."""
@@ -35,7 +35,7 @@ class TestSchedule(unittest.TestCase):
         instant = 10000
         self.instant = self.schedule.register(code="timeout", instant=instant,
                                               target="fake-id", context={})
-        with open(os.path.join(PROCESS_DIR,
+        with open(os.path.join(STORAGE_DIR,
                                "schedule/%d" % instant)) as fhdl:
             schedules = [{
                 "code": "timeout",
@@ -43,17 +43,17 @@ class TestSchedule(unittest.TestCase):
                 "context": {}
             }]
             self.assertEqual(fhdl.read(), json.dumps(schedules))
-        os.unlink(os.path.join(PROCESS_DIR, "schedule/%d" % instant))
-        os.rmdir(os.path.join(PROCESS_DIR, "schedule"))
-        os.rmdir(os.path.join(PROCESS_DIR, "process"))
-        os.rmdir(os.path.join(PROCESS_DIR, "definition"))
-        os.removedirs(PROCESS_DIR)
+        os.unlink(os.path.join(STORAGE_DIR, "schedule/%d" % instant))
+        os.rmdir(os.path.join(STORAGE_DIR, "schedule"))
+        os.rmdir(os.path.join(STORAGE_DIR, "process"))
+        os.rmdir(os.path.join(STORAGE_DIR, "definition"))
+        os.removedirs(STORAGE_DIR)
 
     def test_handle_alarm(self):
         """Test Schedule.handle_alarm()."""
 
         instant = 10000
-        folder = os.path.join(PROCESS_DIR, "schedule")
+        folder = os.path.join(STORAGE_DIR, "schedule")
         with open(os.path.join(folder, "%d" % instant), 'w') as fhdl:
             schedules = [{
                 "code": "timeout",

@@ -6,7 +6,6 @@ import os
 import os.path
 
 import xml.etree.ElementTree as ET
-from ConfigParser import NoSectionError
 
 from bureaucrat.configs import Configs
 from bureaucrat.flowexpression import Process
@@ -40,17 +39,10 @@ class Workflow(object):
 
         LOG.debug("Creating workflow instance from string.")
 
-        # TODO: refactor config storage
-        config = Configs()
-        try:
-            items = dict(config.items("bureaucrat"))
-            process_dir = items.get("process_dir", DEFAULT_PROCESS_DIR)
-        except NoSectionError:
-            process_dir = DEFAULT_PROCESS_DIR
+        storage_dir = Configs.instance().storage_dir
+        setup_storage(storage_dir)
 
-        setup_storage(process_dir)
-
-        defpath = os.path.join(process_dir, "definition/%s" % pid)
+        defpath = os.path.join(storage_dir, "definition/%s" % pid)
         with open(defpath, 'w') as fhdl:
             fhdl.write(pdef)
 
@@ -70,14 +62,8 @@ class Workflow(object):
     def load(process_id):
         """Return existing workflow instance loaded from storage."""
 
-        # TODO: refactor config storage
-        config = Configs()
-        try:
-            items = dict(config.items("bureaucrat"))
-            process_dir = items.get("process_dir", DEFAULT_PROCESS_DIR)
-        except NoSectionError:
-            process_dir = DEFAULT_PROCESS_DIR
-        pdef_path = os.path.join(process_dir, "definition/%s" % process_id)
+        storage_dir = Configs.instance().storage_dir
+        pdef_path = os.path.join(storage_dir, "definition/%s" % process_id)
         LOG.debug("Load a process definition from %s", pdef_path)
         tree = ET.parse(pdef_path)
         xmlelement = tree.getroot()
@@ -88,7 +74,7 @@ class Workflow(object):
             parent_id = xmlelement.attrib["parent"]
 
         process = Process(parent_id, xmlelement, process_id)
-        with open(os.path.join(process_dir,
+        with open(os.path.join(storage_dir,
                                "process/%s" % process.id), 'r') as fhdl:
             snapshot = json.load(fhdl)
             process.reset_state(snapshot)
@@ -97,16 +83,9 @@ class Workflow(object):
     def save(self):
         """Save workflow state to storage."""
 
-        # TODO: refactor config storage
-        config = Configs()
-        try:
-            items = dict(config.items("bureaucrat"))
-            process_dir = items.get("process_dir", DEFAULT_PROCESS_DIR)
-        except NoSectionError:
-            process_dir = DEFAULT_PROCESS_DIR
+        storage_dir = Configs.instance().storage_dir
+        setup_storage(storage_dir)
 
-        setup_storage(process_dir)
-
-        with open(os.path.join(process_dir, "process/%s" % self.process.id),
+        with open(os.path.join(storage_dir, "process/%s" % self.process.id),
                   'w') as fhdl:
             json.dump(self.process.snapshot(), fhdl)

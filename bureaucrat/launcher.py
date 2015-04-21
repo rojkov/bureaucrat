@@ -4,18 +4,13 @@ import json
 import pika
 import xml.etree.ElementTree as ET
 
-from bureaucrat.configs import Configs
 from bureaucrat.utils import context2dict
 
 class Launcher(object):
     """Launches workflow processes."""
 
-    def __init__(self, config=None):
+    def __init__(self, config):
         """Initialize launcher."""
-
-        if config is None:
-            configs = Configs()
-            config  = dict(configs.items("amqp"))
 
         amqp_host = config.get("host", "localhost")
         amqp_user = config.get("user", "guest")

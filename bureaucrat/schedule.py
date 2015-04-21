@@ -7,10 +7,7 @@ import fcntl
 import os
 import os.path
 
-from ConfigParser import NoSectionError
-
 from bureaucrat.workflow import setup_storage # TODO: refactor storage code
-from bureaucrat.workflow import DEFAULT_PROCESS_DIR
 from bureaucrat.workitem import Workitem
 from bureaucrat.configs import Configs
 
@@ -25,14 +22,9 @@ class Schedule(object):
         """Initialize instance."""
 
         self.channel = channel
-        config = Configs()
-        try:
-            items = dict(config.items("bureaucrat"))
-            storage_dir = items.get("process_dir", DEFAULT_PROCESS_DIR)
-        except NoSectionError:
-            storage_dir = DEFAULT_PROCESS_DIR
-        setup_storage(storage_dir)
-        self.schedule_dir = os.path.join(storage_dir, "schedule")
+        config = Configs.instance()
+        setup_storage(config.storage_dir)
+        self.schedule_dir = os.path.join(config.storage_dir, "schedule")
 
     def register(self, code, instant, target, context):
         """Register new schedule."""
