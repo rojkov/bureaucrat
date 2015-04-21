@@ -24,14 +24,14 @@ class TestDelay(unittest.TestCase):
 
     # TODO: move these two cases to a base class
     def test_handle_workitem_completed_state(self):
-        """Test Call.handle_workitem() when While is completed."""
+        """Test Delay.handle_workitem() when While is completed."""
 
         self.fexpr.state = 'completed'
         result = self.fexpr.handle_workitem(self.ch, self.wi)
         self.assertTrue(result == 'ignored')
 
     def test_handle_workitem_wrong_target(self):
-        """Test Call.handle_workitem() when workitem targeted not to it."""
+        """Test Delay.handle_workitem() when workitem targeted not to it."""
 
         self.wi.target = 'fake-id_1'
         self.fexpr.state = 'active'
