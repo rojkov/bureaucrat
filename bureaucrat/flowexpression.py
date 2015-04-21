@@ -15,7 +15,8 @@ LOG = logging.getLogger(__name__)
 def get_supported_flowexpressions():
     """Return list of supported types of flow expressions."""
     # TODO: calculate supported activities dynamically and cache
-    return ('action', 'sequence', 'switch', 'while', 'all', 'call', 'delay')
+    return ('action', 'sequence', 'switch', 'while', 'all', 'call', 'delay',
+            'await')
 
 class FlowExpressionError(Exception):
     """FlowExpression error."""
@@ -41,6 +42,8 @@ def create_fe_from_element(parent_id, element, fei):
         expr = Call(parent_id, element, fei)
     elif tag == 'delay':
         expr = Delay(parent_id, element, fei)
+    elif tag == 'await':
+        expr = Await(parent_id, element, fei)
     else:
         raise FlowExpressionError("Unknown tag: %s" % tag)
     return expr
@@ -63,9 +66,6 @@ class FlowExpression(object):
         self.parent_id = parent_id
         self.context = {}
         self.children = []
-
-        if len(self.allowed_child_types) == 0:
-            return
 
         el_index = 0
         for child in element:
@@ -300,6 +300,73 @@ class Delay(FlowExpression):
             result = 'consumed'
         elif self.state == 'active' and workitem.message == 'timeout':
             LOG.debug("Time is out for %s", self.id)
+            self.state = 'completed'
+            # reply to parent that the child is done
+            workitem.send(channel, message='completed', origin=self.id,
+                          target=self.parent_id)
+            result = 'consumed'
+        else:
+            LOG.debug("%r ignores %r", self, workitem)
+
+        return result
+
+class Await(FlowExpression):
+    """A await activity."""
+
+    def __init__(self, parent_id, element, fei):
+        """Constructor."""
+
+        self.conditions = []
+        FlowExpression.__init__(self, parent_id, element, fei)
+        self.event = element.attrib["event"]
+
+    def __str__(self):
+        """String representation."""
+        return "%s[event=%s]" % (self.id, self.event)
+
+    def parse_non_child(self, element):
+        """Parse case's conditions."""
+
+        if element.tag == 'condition':
+            html_parser = HTMLParser()
+            self.conditions.append(html_parser.unescape(element.text))
+        else:
+            raise CaseError("Unknown element: %s" % element.tag)
+
+    def evaluate(self, workitem):
+        """Check if conditions are met."""
+
+        if len(self.conditions) == 0:
+            return True
+
+        for cond in self.conditions:
+            if eval(cond, {"workitem": workitem}):
+                LOG.debug("Condition %s evaluated to True", cond)
+                return True
+            else:
+                LOG.debug("Condition %s evaluated to False", cond)
+
+        return False
+
+    def handle_workitem(self, channel, workitem):
+        """Handle workitem."""
+
+        if self._can_be_ignored(workitem):
+            return 'ignored'
+
+        result = 'ignore'
+        if self.state == 'ready' and workitem.message == 'start':
+            LOG.debug("Wait for %s", self.event)
+            self.state = 'active'
+            workitem.subscribe(event=self.event, target=self.id)
+            result = 'consumed'
+        elif self.state == 'active' and workitem.message == 'triggered':
+            LOG.debug("Event '%s' triggered for %s", self.event, self.id)
+
+            if not self.evaluate(workitem):
+                LOG.debug("Conditions for %r don't hold", self)
+                return 'ignored'
+
             self.state = 'completed'
             # reply to parent that the child is done
             workitem.send(channel, message='completed', origin=self.id,

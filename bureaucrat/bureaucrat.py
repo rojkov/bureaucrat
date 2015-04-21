@@ -7,6 +7,9 @@ import traceback
 import uuid
 import signal
 import json
+import os
+import os.path
+import fcntl
 
 from bureaucrat.daemonlib import Daemon
 from bureaucrat.workflow import Workflow
@@ -16,6 +19,8 @@ from bureaucrat.configs import Configs
 
 LOG = logging.getLogger(__name__)
 
+# TODO: Drop global constant LOCK_FILE
+LOCK_FILE = '/tmp/bureaucrat-schedule.lock'
 
 def log_trace(func):
     """Log traceback before raising exception."""
@@ -96,6 +101,33 @@ class Bureaucrat(Daemon):
         LOG.debug("Handling timer signal")
         self.schedule.handle_alarm()
 
+    @log_trace
+    def handle_event(self, channel, method, header, body):
+        """Handle workitem."""
+
+        LOG.debug("Method: %r", method)
+        LOG.debug("Header: %r", header)
+        LOG.debug("Handling workitem with Body: %r", body)
+        msg = json.loads(body)
+        eventname = msg["event"]
+        storage_dir = Configs.instance().storage_dir
+        subscr_dir = os.path.join(storage_dir, "subscriptions")
+        with open(LOCK_FILE, 'w') as fd:
+            # TODO: implement the lock as context
+            fcntl.lockf(fd, fcntl.LOCK_EX)
+            file_path = os.path.join(subscr_dir, eventname)
+            if os.path.exists(file_path):
+                with open(file_path, 'r') as subscr_fhdl:
+                    subscriptions = json.load(subscr_fhdl)
+                    for subscr in subscriptions:
+                        subscr["context"]["event"] = msg
+                        workitem = Workitem(subscr["context"])
+                        workitem.send(channel, message='triggered',
+                                      origin='', target=subscr["target"])
+                os.unlink(file_path)
+            fcntl.lockf(fd, fcntl.LOCK_UN)
+        channel.basic_ack(method.delivery_tag)
+
     def run(self):
         """Event cycle."""
 
@@ -109,12 +141,16 @@ class Bureaucrat(Daemon):
                                    exclusive=False, auto_delete=False)
         self.channel.queue_declare(queue=config.message_queue, durable=True,
                                    exclusive=False, auto_delete=False)
+        self.channel.queue_declare(queue=config.event_queue, durable=True,
+                                   exclusive=False, auto_delete=False)
         self.channel.queue_declare(queue="bureaucrat_schedule", durable=True,
                                    exclusive=False, auto_delete=False)
         self.channel.basic_qos(prefetch_count=1)
         self.channel.basic_consume(self.launch_process, queue="bureaucrat")
         self.channel.basic_consume(self.handle_workitem,
                                    queue=config.message_queue)
+        self.channel.basic_consume(self.handle_event,
+                                   queue=config.event_queue)
         self.channel.basic_consume(self.add_schedule,
                                    queue="bureaucrat_schedule")
         signal.signal(signal.SIGALRM, self.handle_alarm)

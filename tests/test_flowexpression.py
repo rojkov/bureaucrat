@@ -31,6 +31,10 @@ class TestFlowExpression(unittest.TestCase):
     def test_constructor_no_children(self):
         """Test FlowExpression.__init__() for simple expression."""
 
+        def fake_iterator(parent):
+            while False:
+                yield None
+        self.xml_element.__iter__ = fake_iterator
         fexpr = FlowExpression('fake-id', self.xml_element, 'fake-id_0')
         self.assertTrue(fexpr.id == 'fake-id_0')
 

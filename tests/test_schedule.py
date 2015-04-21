@@ -27,6 +27,11 @@ class TestSchedule(unittest.TestCase):
     def tearDown(self):
         """Clean up environment."""
         Configs._instance = None
+        os.rmdir(os.path.join(STORAGE_DIR, "schedule"))
+        os.rmdir(os.path.join(STORAGE_DIR, "process"))
+        os.rmdir(os.path.join(STORAGE_DIR, "definition"))
+        os.rmdir(os.path.join(STORAGE_DIR, "subscriptions"))
+        os.removedirs(STORAGE_DIR)
 
     def test_register(self):
         """Test Schedule.register()."""
@@ -43,10 +48,6 @@ class TestSchedule(unittest.TestCase):
             }]
             self.assertEqual(fhdl.read(), json.dumps(schedules))
         os.unlink(os.path.join(STORAGE_DIR, "schedule/%d" % instant))
-        os.rmdir(os.path.join(STORAGE_DIR, "schedule"))
-        os.rmdir(os.path.join(STORAGE_DIR, "process"))
-        os.rmdir(os.path.join(STORAGE_DIR, "definition"))
-        os.removedirs(STORAGE_DIR)
 
     def test_handle_alarm(self):
         """Test Schedule.handle_alarm()."""

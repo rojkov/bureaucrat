@@ -8,6 +8,7 @@ from ConfigParser import NoSectionError
 LOG = logging.getLogger(__name__)
 
 DEFAULT_MESSAGE_QUEUE = 'bureaucrat_msgs'
+DEFAULT_EVENT_QUEUE = 'bureaucrat_events'
 DEFAULT_STORAGE_DIR = '/tmp/processes'
 DEFAULT_TASKQUEUE_TYPE = 'taskqueue'
 
@@ -26,6 +27,7 @@ class Configs(object):
             items = dict(config.items("bureaucrat"))
             self._message_queue = items.get("message_queue",
                                             DEFAULT_MESSAGE_QUEUE)
+            self._event_queue = items.get("event_queue", DEFAULT_EVENT_QUEUE)
             self._storage_dir = items.get("storage_dir", DEFAULT_STORAGE_DIR)
             self._taskqueue_type = items.get("taskqueue_type",
                                              DEFAULT_TASKQUEUE_TYPE)
@@ -66,6 +68,11 @@ class Configs(object):
     def message_queue(self):
         """Return message_queue config parameter."""
         return self._message_queue
+
+    @property
+    def event_queue(self):
+        """Return event_queue config parameter."""
+        return self._event_queue
 
     @property
     def storage_dir(self):

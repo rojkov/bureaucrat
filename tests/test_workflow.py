@@ -61,6 +61,7 @@ class TestWorkflow(unittest.TestCase):
         os.unlink(os.path.join(STORAGE_DIR, "definition/fake-id"))
         os.rmdir(os.path.join(STORAGE_DIR, "definition"))
         os.rmdir(os.path.join(STORAGE_DIR, "schedule"))
+        os.rmdir(os.path.join(STORAGE_DIR, "subscriptions"))
         os.removedirs(STORAGE_DIR)
 
     def test_create_from_string(self):

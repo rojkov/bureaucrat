@@ -1,10 +1,9 @@
-#!/usr/bin/env python
+#!/usr/bin/python
 
 import logging
 import pika
 import sys
 import os.path
-import json
 
 from optparse import OptionParser
 
@@ -14,16 +13,13 @@ def parse_cmdline():
     """Parse command line options."""
 
     parser = OptionParser()
-    parser.add_option("-e", "--event", dest="event",
-                      help="event name")
-    parser.add_option("-d", "--data", dest="data",
-                      default="{}",
-                      help="event data")
+    parser.add_option("-p", "--path", dest="path",
+                      help="path to fake event")
 
     (options, args) = parser.parse_args()
 
-    if options.event is None:
-        LOG.error("Mandatory option 'event' is missing")
+    if options.path is None:
+        LOG.error("Mandatory option 'path' is missing")
         sys.exit(1)
 
     return options
@@ -32,17 +28,25 @@ def main():
     """Entry point."""
 
     options = parse_cmdline()
+    if not os.path.isfile(options.path):
+        LOG.error("File '%s' not found. Exiting..." % options.path)
+        sys.exit(1)
+
+    event = ""
+    with open(options.path, 'r') as fhdl:
+        event = fhdl.read()
+
+    if not len(event):
+        LOG.error("Empty file.")
+        sys.exit(1)
 
     parameters = pika.ConnectionParameters(host="localhost")
-
-    body = json.loads(options.data)
-    body["event"] = options.event
 
     connection = pika.BlockingConnection(parameters)
     channel = connection.channel()
     channel.basic_publish(exchange='',
-                          routing_key='bureaucrat_events',
-                          body=json.dumps(body),
+                          routing_key='bureaucrat_msgs',
+                          body=event,
                           properties=pika.BasicProperties(
                               delivery_mode=2
                           ))

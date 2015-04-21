@@ -23,6 +23,7 @@ def setup_storage(storage_dir):
         os.makedirs(os.path.join(storage_dir, "definition"))
         os.makedirs(os.path.join(storage_dir, "process"))
         os.makedirs(os.path.join(storage_dir, "schedule"))
+        os.makedirs(os.path.join(storage_dir, "subscriptions"))
 
 
 class Workflow(object):
