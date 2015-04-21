@@ -11,7 +11,6 @@ from bureaucrat.schedule import Schedule
 from bureaucrat.configs import Configs
 
 STORAGE_DIR = '/tmp/unittest-processes'
-SCHEDULES = """[{"destination":"fake-id","code":"timeout"}]"""
 
 class TestSchedule(unittest.TestCase):
     """Tests for Schedule class."""
@@ -33,8 +32,8 @@ class TestSchedule(unittest.TestCase):
         """Test Schedule.register()."""
 
         instant = 10000
-        self.instant = self.schedule.register(code="timeout", instant=instant,
-                                              target="fake-id", context={})
+        self.schedule.register(code="timeout", instant=instant,
+                               target="fake-id", context={})
         with open(os.path.join(STORAGE_DIR,
                                "schedule/%d" % instant)) as fhdl:
             schedules = [{
