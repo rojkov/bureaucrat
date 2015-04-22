@@ -3,14 +3,19 @@ from __future__ import absolute_import
 import sys
 import pika
 import logging
+import logging.config
 import traceback
+import daemon
 import uuid
 import signal
+import fcntl
 import json
 import os
 import os.path
 
-from bureaucrat.daemonlib import Daemon
+from optparse import OptionParser
+from ConfigParser import ConfigParser
+
 from bureaucrat.workflow import Workflow
 from bureaucrat.workitem import Workitem, WorkitemError
 from bureaucrat.schedule import Schedule
@@ -19,6 +24,8 @@ from bureaucrat.storage import Storage
 from bureaucrat.storage import lock_storage
 
 LOG = logging.getLogger(__name__)
+
+PID_FILE = "/var/run/bureaucrat.pid"
 
 def log_trace(func):
     """Log traceback before raising exception."""
@@ -34,10 +41,63 @@ def log_trace(func):
     return new_func
 
 
-class Bureaucrat(Daemon):
-    """Bureaucrat daemon."""
+def parse_cmdline(defaults):
+    """Parse commandline options."""
 
-    pidfile = "/var/run/bureaucrat.pid"
+    parser = OptionParser()
+    parser.add_option("-f", "--foreground", dest="foreground",
+                      action="store_true", default=False,
+                      help="don't daemonize")
+    parser.add_option("-c", "--config", dest="config",
+                      default="/etc/taskqueue/config.ini",
+                      help="path to config file")
+    parser.add_option("-p", "--pid-file", dest="pidfile",
+                      default=defaults["pidfile"])
+
+    (options, _) = parser.parse_args()
+    return options
+
+
+class PidFile(object):
+    """Context manager that locks a pid file.
+
+    Implemented as class not generator because daemon.py is
+    calling .__exit__() with no parameters instead of the None, None, None
+    specified by PEP-343.
+    copy&pasted from
+    http://code.activestate.com/recipes/577911-context-manager-for-a-daemon-pid-file/
+    """
+    # pylint: disable=R0903
+
+    def __init__(self, path):
+        self.path = path
+        self.pidfile = None
+
+    def __enter__(self):
+        self.pidfile = open(self.path, "a+")
+        try:
+            fcntl.flock(self.pidfile.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except IOError:
+            raise SystemExit("Already running according to " + self.path)
+        self.pidfile.seek(0)
+        self.pidfile.truncate()
+        self.pidfile.write(str(os.getpid()))
+        self.pidfile.flush()
+        self.pidfile.seek(0)
+        return self.pidfile
+
+    def __exit__(self, exc_type=None, exc_value=None, exc_tb=None):
+        try:
+            self.pidfile.close()
+        except IOError as err:
+            # ok if file was just closed elsewhere
+            if err.errno != 9:
+                raise
+        os.remove(self.path)
+
+
+class Bureaucrat(object):
+    """Bureaucrat daemon."""
 
     def __init__(self):
         """Initialize application."""
@@ -157,3 +217,35 @@ class Bureaucrat(Daemon):
         self.channel.stop_consuming()
         self.connection.close()
         sys.exit(0)
+
+    @classmethod
+    def main(cls):
+        """Bureaucrat entry point."""
+
+        options = parse_cmdline({"pidfile": PID_FILE})
+
+        # configure logging
+        logging.config.fileConfig(options.config,
+                                  disable_existing_loggers=False)
+
+        config = ConfigParser()
+        config.read(options.config)
+        Configs.instance(config)
+
+        daemon_obj = cls()
+
+        context = daemon.DaemonContext()
+
+        context.pidfile = PidFile(options.pidfile)
+        if options.foreground:
+            context.detach_process = False
+            context.stdout = sys.stdout
+            context.stderr = sys.stdout
+
+        context.signal_map = {
+            signal.SIGTERM: daemon_obj.cleanup,
+            signal.SIGHUP: daemon_obj.cleanup
+        }
+
+        with context:
+            daemon_obj.run()
