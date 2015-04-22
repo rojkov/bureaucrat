@@ -1,5 +1,3 @@
-* Refactor the config storage to ease access to preferences
-
 * Move AMQP queue names to config.ini
 
 * Drop eval() from workitem.py
