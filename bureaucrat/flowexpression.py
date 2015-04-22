@@ -2,7 +2,6 @@ from __future__ import absolute_import
 
 import logging
 import pika
-import json
 import time
 from HTMLParser import HTMLParser
 import xml.etree.ElementTree as ET
@@ -12,16 +11,15 @@ from bureaucrat.utils import context2dict
 
 LOG = logging.getLogger(__name__)
 
-def get_supported_flowexpressions():
+
+def _get_supported_flowexpressions():
     """Return list of supported types of flow expressions."""
     # TODO: calculate supported activities dynamically and cache
     return ('action', 'sequence', 'switch', 'while', 'all', 'call', 'delay',
             'await')
 
-class FlowExpressionError(Exception):
-    """FlowExpression error."""
 
-def create_fe_from_element(parent_id, element, fei):
+def _create_fe_from_element(parent_id, element, fei):
     """Create a flow expression instance from ElementTree.Element."""
 
     tag = element.tag
@@ -48,6 +46,11 @@ def create_fe_from_element(parent_id, element, fei):
         raise FlowExpressionError("Unknown tag: %s" % tag)
     return expr
 
+
+class FlowExpressionError(Exception):
+    """FlowExpression error."""
+
+
 class FlowExpression(object):
     """Flow expression."""
 
@@ -70,8 +73,8 @@ class FlowExpression(object):
         el_index = 0
         for child in element:
             if child.tag in self.allowed_child_types:
-                fexpr = create_fe_from_element(self.id, child,
-                                               "%s_%d" % (fei, el_index))
+                fexpr = _create_fe_from_element(self.id, child,
+                                                "%s_%d" % (fei, el_index))
                 self.children.append(fexpr)
                 el_index = el_index + 1
             else:
@@ -147,7 +150,7 @@ class ProcessError(FlowExpressionError):
 class Process(FlowExpression):
     """A Process flow expression."""
 
-    allowed_child_types = get_supported_flowexpressions()
+    allowed_child_types = _get_supported_flowexpressions()
 
     def parse_non_child(self, element):
         """Parse process's fields."""
@@ -195,7 +198,7 @@ class Process(FlowExpression):
 class Sequence(FlowExpression):
     """A sequence activity."""
 
-    allowed_child_types = get_supported_flowexpressions()
+    allowed_child_types = _get_supported_flowexpressions()
 
     def handle_workitem(self, channel, workitem):
         """Handle workitem."""
@@ -383,7 +386,7 @@ class CaseError(FlowExpressionError):
 class Case(FlowExpression):
     """Case element of switch activity."""
 
-    allowed_child_types = get_supported_flowexpressions()
+    allowed_child_types = _get_supported_flowexpressions()
 
     def __init__(self, parent_id, element, fei):
         """Constructor."""
@@ -508,7 +511,7 @@ class WhileError(FlowExpressionError):
 class While(FlowExpression):
     """While activity."""
 
-    allowed_child_types = get_supported_flowexpressions()
+    allowed_child_types = _get_supported_flowexpressions()
 
     def __init__(self, parent_id, element, fei):
         """Constructor."""
@@ -594,7 +597,7 @@ class While(FlowExpression):
 class All(FlowExpression):
     """All activity."""
 
-    allowed_child_types = get_supported_flowexpressions()
+    allowed_child_types = _get_supported_flowexpressions()
 
     def handle_workitem(self, channel, workitem):
         """Handle workitem."""

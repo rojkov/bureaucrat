@@ -2,8 +2,6 @@ from __future__ import absolute_import
 
 import logging
 import json
-import os
-import os.path
 
 import xml.etree.ElementTree as ET
 

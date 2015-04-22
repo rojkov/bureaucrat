@@ -3,8 +3,6 @@ from __future__ import absolute_import
 import logging
 import time
 import json
-import os
-import os.path
 
 from bureaucrat.workitem import Workitem
 from bureaucrat.storage import Storage
@@ -25,7 +23,7 @@ class Schedule(object):
         """Register new schedule."""
         LOG.debug("Register '%s' for %s at %d", code, target, instant)
 
-        assert type(instant) is int
+        assert isinstance(instant, int)
 
         schedules = []
         storage = Storage.instance()

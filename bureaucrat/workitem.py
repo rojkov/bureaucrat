@@ -3,7 +3,6 @@ from __future__ import absolute_import
 import logging
 import json
 import pika
-import os.path
 
 from bureaucrat.configs import Configs
 from bureaucrat.storage import Storage
@@ -188,4 +187,5 @@ class Workitem(object):
                                       content_encoding='utf-8'
                                   ))
         else:
-            raise WorkitemError("Unknown task queue type: %s" % queue_type)
+            raise WorkitemError("Unknown task queue type: %s" % \
+                                config.taskqueue_type)
