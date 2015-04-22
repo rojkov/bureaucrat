@@ -9,18 +9,16 @@ import signal
 import json
 import os
 import os.path
-import fcntl
 
 from bureaucrat.daemonlib import Daemon
 from bureaucrat.workflow import Workflow
 from bureaucrat.workitem import Workitem, WorkitemError
 from bureaucrat.schedule import Schedule
 from bureaucrat.configs import Configs
+from bureaucrat.storage import Storage
+from bureaucrat.storage import lock_storage
 
 LOG = logging.getLogger(__name__)
-
-# TODO: Drop global constant LOCK_FILE
-LOCK_FILE = '/tmp/bureaucrat-schedule.lock'
 
 def log_trace(func):
     """Log traceback before raising exception."""
@@ -102,6 +100,7 @@ class Bureaucrat(Daemon):
         self.schedule.handle_alarm()
 
     @log_trace
+    @lock_storage
     def handle_event(self, channel, method, header, body):
         """Handle workitem."""
 
@@ -110,22 +109,16 @@ class Bureaucrat(Daemon):
         LOG.debug("Handling workitem with Body: %r", body)
         msg = json.loads(body)
         eventname = msg["event"]
-        storage_dir = Configs.instance().storage_dir
-        subscr_dir = os.path.join(storage_dir, "subscriptions")
-        with open(LOCK_FILE, 'w') as fd:
-            # TODO: implement the lock as context
-            fcntl.lockf(fd, fcntl.LOCK_EX)
-            file_path = os.path.join(subscr_dir, eventname)
-            if os.path.exists(file_path):
-                with open(file_path, 'r') as subscr_fhdl:
-                    subscriptions = json.load(subscr_fhdl)
-                    for subscr in subscriptions:
-                        subscr["context"]["event"] = msg
-                        workitem = Workitem(subscr["context"])
-                        workitem.send(channel, message='triggered',
-                                      origin='', target=subscr["target"])
-                os.unlink(file_path)
-            fcntl.lockf(fd, fcntl.LOCK_UN)
+        storage = Storage.instance()
+        if storage.exists("subscriptions", eventname):
+            subscriptions = json.loads(storage.load("subscriptions",
+                                                    eventname))
+            for subscr in subscriptions:
+                subscr["context"]["event"] = msg
+                workitem = Workitem(subscr["context"])
+                workitem.send(channel, message='triggered',
+                              origin='', target=subscr["target"])
+            storage.delete("subscriptions", eventname)
         channel.basic_ack(method.delivery_tag)
 
     def run(self):

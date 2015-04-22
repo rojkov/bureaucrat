@@ -7,23 +7,11 @@ import os.path
 
 import xml.etree.ElementTree as ET
 
-from bureaucrat.configs import Configs
+from bureaucrat.storage import Storage
+from bureaucrat.storage import lock_storage
 from bureaucrat.flowexpression import Process
 
 LOG = logging.getLogger(__name__)
-
-# Path to directory where process snapshots are stored
-DEFAULT_PROCESS_DIR = '/tmp/processes'
-
-
-def setup_storage(storage_dir):
-    """Set up storage if it hasn't been set up yet."""
-
-    if not os.path.isdir(storage_dir):
-        os.makedirs(os.path.join(storage_dir, "definition"))
-        os.makedirs(os.path.join(storage_dir, "process"))
-        os.makedirs(os.path.join(storage_dir, "schedule"))
-        os.makedirs(os.path.join(storage_dir, "subscriptions"))
 
 
 class Workflow(object):
@@ -40,15 +28,10 @@ class Workflow(object):
 
         LOG.debug("Creating workflow instance from string.")
 
-        storage_dir = Configs.instance().storage_dir
-        setup_storage(storage_dir)
-
-        defpath = os.path.join(storage_dir, "definition/%s" % pid)
-        with open(defpath, 'w') as fhdl:
-            fhdl.write(pdef)
-
         xmlelement = ET.fromstring(pdef)
         assert xmlelement.tag == 'process'
+
+        Storage.instance().save("definition", pid, pdef)
 
         parent_id = ''
         if "parent" in xmlelement.attrib:
@@ -60,14 +43,14 @@ class Workflow(object):
         return workflow
 
     @staticmethod
+    @lock_storage
     def load(process_id):
         """Return existing workflow instance loaded from storage."""
 
-        storage_dir = Configs.instance().storage_dir
-        pdef_path = os.path.join(storage_dir, "definition/%s" % process_id)
-        LOG.debug("Load a process definition from %s", pdef_path)
-        tree = ET.parse(pdef_path)
-        xmlelement = tree.getroot()
+        LOG.debug("Load a process definition from %s", process_id)
+        storage = Storage.instance()
+        pdef = storage.load("definition", process_id)
+        xmlelement = ET.fromstring(pdef)
         assert xmlelement.tag == 'process'
 
         parent_id = ''
@@ -75,18 +58,12 @@ class Workflow(object):
             parent_id = xmlelement.attrib["parent"]
 
         process = Process(parent_id, xmlelement, process_id)
-        with open(os.path.join(storage_dir,
-                               "process/%s" % process.id), 'r') as fhdl:
-            snapshot = json.load(fhdl)
-            process.reset_state(snapshot)
+        process.reset_state(json.loads(storage.load("process", process.id)))
         return Workflow(process)
 
+    @lock_storage
     def save(self):
         """Save workflow state to storage."""
 
-        storage_dir = Configs.instance().storage_dir
-        setup_storage(storage_dir)
-
-        with open(os.path.join(storage_dir, "process/%s" % self.process.id),
-                  'w') as fhdl:
-            json.dump(self.process.snapshot(), fhdl)
+        Storage.instance().save("process", self.process.id,
+                                json.dumps(self.process.snapshot()))

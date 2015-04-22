@@ -7,6 +7,7 @@ from ConfigParser import ConfigParser
 
 from bureaucrat.workflow import Workflow
 from bureaucrat.configs import Configs
+from bureaucrat.storage import Storage
 
 processdsc = """<?xml version="1.0"?>
 <process name="example1">
@@ -56,12 +57,11 @@ class TestWorkflow(unittest.TestCase):
     def tearDown(self):
         """Clean up environment."""
         Configs._instance = None
+        Storage._instance = None
         os.unlink(os.path.join(STORAGE_DIR, "process/fake-id"))
         os.rmdir(os.path.join(STORAGE_DIR, "process"))
         os.unlink(os.path.join(STORAGE_DIR, "definition/fake-id"))
         os.rmdir(os.path.join(STORAGE_DIR, "definition"))
-        os.rmdir(os.path.join(STORAGE_DIR, "schedule"))
-        os.rmdir(os.path.join(STORAGE_DIR, "subscriptions"))
         os.removedirs(STORAGE_DIR)
 
     def test_create_from_string(self):

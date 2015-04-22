@@ -4,9 +4,10 @@ import logging
 import json
 import pika
 import os.path
-import fcntl
 
 from bureaucrat.configs import Configs
+from bureaucrat.storage import Storage
+from bureaucrat.storage import lock_storage
 
 LOG = logging.getLogger(__name__)
 
@@ -15,9 +16,6 @@ class WorkitemError(Exception):
 
 
 WORKITEM_MIME_TYPE = 'application/x-bureaucrat-workitem'
-
-# TODO: Drop global constant LOCK_FILE
-LOCK_FILE = '/tmp/bureaucrat-schedule.lock'
 
 class Workitem(object):
     """Work item."""
@@ -120,25 +118,18 @@ class Workitem(object):
                                   content_encoding='utf-8'
                               ))
 
+    @lock_storage
     def subscribe(self, event, target):
         """Subscribe given target to event."""
-        storage_dir = Configs.instance().storage_dir
-        subscr_dir = os.path.join(storage_dir, "subscriptions")
-        with open(LOCK_FILE, 'w') as fd:
-            # TODO: implement the lock as context
-            fcntl.lockf(fd, fcntl.LOCK_EX)
-            file_path = os.path.join(subscr_dir, event)
-            subscriptions = []
-            if os.path.exists(file_path):
-                with open(file_path, 'r') as subscr_fhdl:
-                    subscriptions = json.load(subscr_fhdl)
-            subscriptions.append({
-                "target": target,
-                "context": self._fields
-            })
-            with open(file_path, 'w') as subscr_fhdl:
-                json.dump(subscriptions, subscr_fhdl)
-            fcntl.lockf(fd, fcntl.LOCK_UN)
+        storage = Storage.instance()
+        subscriptions = []
+        if storage.exists("subscriptions", event):
+            subscriptions = json.loads(storage.load("subscriptions", event))
+        subscriptions.append({
+            "target": target,
+            "context": self._fields
+        })
+        storage.save("subscriptions", event, json.dumps(subscriptions))
 
     def elaborate(self, channel, participant, origin):
         """Elaborate the workitem at a given participant."""

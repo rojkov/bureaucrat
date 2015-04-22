@@ -3,17 +3,14 @@ from __future__ import absolute_import
 import logging
 import time
 import json
-import fcntl
 import os
 import os.path
 
-from bureaucrat.workflow import setup_storage # TODO: refactor storage code
 from bureaucrat.workitem import Workitem
-from bureaucrat.configs import Configs
+from bureaucrat.storage import Storage
+from bureaucrat.storage import lock_storage
 
 LOG = logging.getLogger(__name__)
-
-LOCK_FILE = '/tmp/bureaucrat-schedule.lock'
 
 class Schedule(object):
     """Implements scheduled events."""
@@ -22,51 +19,39 @@ class Schedule(object):
         """Initialize instance."""
 
         self.channel = channel
-        config = Configs.instance()
-        setup_storage(config.storage_dir)
-        self.schedule_dir = os.path.join(config.storage_dir, "schedule")
 
+    @lock_storage
     def register(self, code, instant, target, context):
         """Register new schedule."""
         LOG.debug("Register '%s' for %s at %d", code, target, instant)
 
         assert type(instant) is int
 
-        with open(LOCK_FILE, 'w') as fd:
-            # TODO: implement the lock as context
-            fcntl.lockf(fd, fcntl.LOCK_EX)
-            file_path = os.path.join(self.schedule_dir, "%d" % instant)
-            schedules = []
-            if os.path.exists(file_path):
-                with open(file_path, 'r') as sc_fhdl:
-                    schedules = json.load(sc_fhdl)
-            schedules.append({
-                "code": code,
-                "target": target,
-                "context": context
-            })
-            with open(file_path, 'w') as sc_fhdl:
-                json.dump(schedules, sc_fhdl)
-            fcntl.lockf(fd, fcntl.LOCK_UN)
+        schedules = []
+        storage = Storage.instance()
+        if storage.exists("schedule", str(instant)):
+            schedules = json.loads(storage.load("schedule", str(instant)))
+        schedules.append({
+            "code": code,
+            "target": target,
+            "context": context
+        })
+        storage.save("schedule", str(instant), json.dumps(schedules))
 
+    @lock_storage
     def handle_alarm(self):
         """Load schedule."""
 
         LOG.debug("Handling alarm")
-        with open(LOCK_FILE, 'w') as fd:
-            fcntl.lockf(fd, fcntl.LOCK_EX)
-            timestamp = int(time.time())
-            for fname in os.listdir(self.schedule_dir):
-                if timestamp >= int(fname):
-                    fpath = os.path.join(self.schedule_dir, fname)
-                    schedules = []
-                    with open(fpath, 'r') as fhdl:
-                        schedules = json.load(fhdl)
-                    for sch in schedules:
-                        workitem = Workitem(sch["context"])
-                        workitem.send(self.channel, message=sch["code"],
-                                      origin="", target=sch["target"])
-                        LOG.debug("Sent '%s' to %s", sch["code"],
-                                  sch["target"])
-                    os.unlink(fpath)
-            fcntl.lockf(fd, fcntl.LOCK_UN)
+        timestamp = int(time.time())
+        storage = Storage.instance()
+        for key in storage.keys("schedule"):
+            if timestamp >= int(key):
+                schedules = json.loads(storage.load("schedule", key))
+                for sch in schedules:
+                    workitem = Workitem(sch["context"])
+                    workitem.send(self.channel, message=sch["code"],
+                                  origin="", target=sch["target"])
+                    LOG.debug("Sent '%s' to %s", sch["code"],
+                              sch["target"])
+                storage.delete("schedule", key)
