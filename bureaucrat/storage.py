@@ -91,7 +91,7 @@ class Storage(object):
         if os.path.isdir(bucket_path):
             return os.listdir(bucket_path)
         else:
-            raise StorageError("No such bucket: %s" % bucket)
+            return []
 
     def exists(self, bucket, key):
         """Retrun true if key exists in bucket."""
