@@ -105,7 +105,6 @@ class Bureaucrat(object):
         self.channel = None
         self.connection = None
         self.schedule = None
-        super(Bureaucrat, self).__init__()
 
     @log_trace
     def launch_process(self, channel, method, header, body):
@@ -135,8 +134,9 @@ class Bureaucrat(object):
             channel.basic_ack(method.delivery_tag)
             return
 
-        if workitem.target == '':
+        if workitem.target == '' and workitem.message == 'completed':
             LOG.debug("The process %s has finished", workitem.origin)
+            Workflow.load(workitem.origin).delete()
         else:
             wflow = Workflow.load(workitem.target_pid)
             wflow.process.handle_workitem(channel, workitem)

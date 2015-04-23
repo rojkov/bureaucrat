@@ -65,3 +65,11 @@ class Workflow(object):
 
         Storage.instance().save("process", self.process.id,
                                 json.dumps(self.process.snapshot()))
+
+    @lock_storage
+    def delete(self):
+        """Delete workflow instance from storage."""
+
+        storage = Storage.instance()
+        storage.delete("process", self.process.id)
+        storage.delete("definition", self.process.id)
