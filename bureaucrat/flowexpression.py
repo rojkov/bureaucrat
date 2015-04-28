@@ -3,12 +3,14 @@ from __future__ import absolute_import
 import logging
 import pika
 import time
+import json
 from HTMLParser import HTMLParser
 import xml.etree.ElementTree as ET
 
-from bureaucrat.workitem import Workitem
 from bureaucrat.context import Context
 from bureaucrat.message import Message
+from bureaucrat.storage import Storage
+from bureaucrat.storage import lock_storage
 
 LOG = logging.getLogger(__name__)
 
@@ -46,6 +48,19 @@ def _create_fe_from_element(parent_id, element, fei, context):
     else:
         raise FlowExpressionError("Unknown tag: %s" % tag)
     return expr
+
+
+@lock_storage
+def _subscribe(event, target):
+    """Subscribe given target to event."""
+    storage = Storage.instance()
+    subscriptions = []
+    if storage.exists("subscriptions", event):
+        subscriptions = json.loads(storage.load("subscriptions", event))
+    subscriptions.append({
+        "target": target
+    })
+    storage.save("subscriptions", event, json.dumps(subscriptions))
 
 
 class FlowExpressionError(Exception):
@@ -407,8 +422,7 @@ class Await(FlowExpression):
         if self._is_start_message(msg):
             LOG.debug("Wait for %s", self.event)
             self.state = 'active'
-            workitem = Workitem() # TOOD: refactor
-            workitem.subscribe(event=self.event, target=self.id)
+            _subscribe(event=self.event, target=self.id)
             result = 'consumed'
         elif self.state == 'active' and msg.name == 'triggered':
             LOG.debug("Event '%s' triggered for %s", self.event, self.id)

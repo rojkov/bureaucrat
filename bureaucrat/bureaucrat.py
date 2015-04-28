@@ -123,14 +123,14 @@ class Bureaucrat(object):
 
     @log_trace
     def handle_message(self, channel, method, header, body):
-        """Handle workitem."""
+        """Handle message."""
 
         LOG.debug("Method: %r", method)
         LOG.debug("Header: %r", header)
-        LOG.debug("Handling workitem with Body: %r", body)
+        LOG.debug("Handling message with Body: %r", body)
         try:
             if header.content_type == Message.content_type:
-                msg = Message.load(body) # TODO: rename 'workitem'
+                msg = Message.load(body)
             else:
                 witem = Workitem.loads(body)
                 msg = Message(name=witem.name, target=witem.target,
@@ -156,7 +156,7 @@ class Bureaucrat(object):
         """Add new scheduled event."""
         LOG.debug("Method: %r", method)
         LOG.debug("Header: %r", header)
-        LOG.debug("Handling workitem with Body: %r", body)
+        LOG.debug("Handling delivery with Body: %r", body)
         sch = json.loads(body)
         self.schedule.register(instant=sch["instant"], code=sch["code"],
                                target=sch["target"])
@@ -170,11 +170,11 @@ class Bureaucrat(object):
     @log_trace
     @lock_storage
     def handle_event(self, channel, method, header, body):
-        """Handle workitem."""
+        """Handle event."""
 
         LOG.debug("Method: %r", method)
         LOG.debug("Header: %r", header)
-        LOG.debug("Handling workitem with Body: %r", body)
+        LOG.debug("Handling event with Body: %r", body)
         msg = json.loads(body)
         eventname = msg["event"]
         storage = Storage.instance()

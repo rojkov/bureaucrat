@@ -34,14 +34,3 @@ class TestWorkitem(unittest.TestCase):
         os.rmdir(os.path.join(STORAGE_DIR, "subscriptions"))
         os.removedirs(STORAGE_DIR)
 
-    def test_subscribe(self):
-        """Test Workitem.subscribe()."""
-
-        workitem = Workitem({"test": "test"})
-        workitem.subscribe(event="test_event", target="fake-id")
-        self.subscriptions.append({
-            "target": "fake-id",
-            "context": {"test": "test"}
-        })
-        self.assertEqual(Storage.instance().load("subscriptions", "test_event"),
-                         json.dumps(self.subscriptions))

@@ -21,7 +21,7 @@ class ChannelWrapper(object):
         self._ch = channel
 
     def send(self, message):
-        """Send a message to the target with the workitem attached."""
+        """Send a message to the target with payload attached."""
 
         body = {
             "message": message.name,

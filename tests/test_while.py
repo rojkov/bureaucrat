@@ -50,7 +50,7 @@ class TestWhile(unittest.TestCase):
         self.assertEqual(result, 'ignored')
 
     def test_handle_message_response(self):
-        """Test While.handle_message() with message workitem."""
+        """Test While.handle_message() with response message."""
 
         msg = Message(name='response', target='fake-id_0_0',
                       origin='fake-id_0_0')

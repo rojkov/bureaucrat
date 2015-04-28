@@ -34,7 +34,7 @@ class TestAll(unittest.TestCase):
         self.assertTrue(result == 'ignored')
 
     def test_handle_message_wrong_target(self):
-        """Test All.handle_message() when workitem targeted not to it."""
+        """Test All.handle_message() when message targeted not to it."""
 
         self.fexpr.state = 'active'
         result = self.fexpr.handle_message(
@@ -90,7 +90,7 @@ class TestAll(unittest.TestCase):
         self.assertTrue(self.ch.send.call_args_list == [])
 
     def test_handle_message_completed_with_completed_children(self):
-        """Test All.handle_message() with completed workitem with no active child."""
+        """Test All.handle_message() with completed msg with no active child."""
 
         msg = Message(name='completed', target='fake-id_0',
                       origin='fake-id_0_1')

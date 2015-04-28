@@ -3,9 +3,6 @@ from __future__ import absolute_import
 import logging
 import json
 
-from bureaucrat.storage import Storage
-from bureaucrat.storage import lock_storage
-
 LOG = logging.getLogger(__name__)
 
 class WorkitemError(Exception):
@@ -85,17 +82,4 @@ class Workitem(object):
         """Return workitem's message name."""
 
         return self._header["message"]
-
-    @lock_storage
-    def subscribe(self, event, target):
-        """Subscribe given target to event."""
-        storage = Storage.instance()
-        subscriptions = []
-        if storage.exists("subscriptions", event):
-            subscriptions = json.loads(storage.load("subscriptions", event))
-        subscriptions.append({
-            "target": target,
-            "context": self._fields
-        })
-        storage.save("subscriptions", event, json.dumps(subscriptions))
 

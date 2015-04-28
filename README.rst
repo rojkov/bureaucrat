@@ -30,7 +30,6 @@ method `Launcher.launch()` accepts two parameters:
  2. fields.
 
 The second parameter sets the root context of a new process instance.
-Participants see the context as the attribute `Workitem.fields`.
 
 At the momemnt the engine supports only one format for process definitions
 which resembles the format used in the BPML specification. Check this `process
@@ -68,9 +67,9 @@ Supported activities
 `call`
     a simple activity launching a new subprocess. The attribute `process` of
     the activity refers the definition of the subprocess. At the moment
-    only reference to `Workitem.fields` is supported. E.g.
+    only reference to `context` is supported. E.g.
     `<call process="$proc">` launches a subprocess defined in the current
-    `Workitem.fields['proc']`.
+    `context['proc']`.
 
     The parent process pauses until the subprocess completes.
 
@@ -83,7 +82,7 @@ Supported activities
     specified in the parameter `event` gets triggered, e.g.::
 
        <await event="fake_event_name">
-           <condition>workitem.fields["precondition"] is True</condition>
+           <condition>context["precondition"] is True</condition>
        </await>
 
     The events get triggered by publishing a specially crafted message to
@@ -119,7 +118,7 @@ Supported activities
                                   body=json.dumps(kwargs["result"]),
                                   properties=pika.BasicProperties(
                                       delivery_mode=2,
-                                      content_type='application/x-bureaucrat-workitem'
+                                      content_type='application/x-bureaucrat-message'
                                   ))
             connection.close()
 

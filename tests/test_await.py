@@ -1,11 +1,18 @@
 import unittest
+import os
+import os.path
+import json
 import xml.etree.ElementTree as ET
+
+from ConfigParser import ConfigParser
 
 from mock import Mock
 from mock import patch
 
 from bureaucrat.flowexpression import Await
 from bureaucrat.context import Context
+from bureaucrat.configs import Configs
+from bureaucrat.storage import Storage
 from bureaucrat.message import Message
 
 processdsc = """<?xml version="1.0"?>
@@ -13,6 +20,8 @@ processdsc = """<?xml version="1.0"?>
     <condition>True</condition>
 </await>
 """
+
+STORAGE_DIR = '/tmp/unittest-processes'
 
 class TestAwait(unittest.TestCase):
     """Tests for Await activity."""
@@ -42,16 +51,33 @@ class TestAwait(unittest.TestCase):
 
     def test_handle_message_start(self):
         """Test Await.handle_message() with 'start' message."""
+        confparser = ConfigParser()
+        confparser.add_section('bureaucrat')
+        confparser.set('bureaucrat', 'storage_dir', STORAGE_DIR)
+        Configs.instance(confparser)
+        subscriptions = [{
+                "target": "some-id"
+            }]
+        Storage.instance().save("subscriptions", "test_event",
+                                json.dumps(subscriptions))
+
         msg = Message(name='start', target='fake-id_0', origin='fake-id')
         self.fexpr.state = 'ready'
-        with patch('bureaucrat.flowexpression.Workitem') as MockWI:
-            witem = Mock()
-            MockWI.return_value = witem
-            result = self.fexpr.handle_message(self.ch, msg)
-            self.assertEqual(result, 'consumed')
-            self.assertEqual(self.fexpr.state, 'active')
-            witem.subscribe.assert_called_once_with(event='test_event',
-                                                    target='fake-id_0')
+        result = self.fexpr.handle_message(self.ch, msg)
+        self.assertEqual(result, 'consumed')
+        self.assertEqual(self.fexpr.state, 'active')
+        filename = os.path.join(STORAGE_DIR, "subscriptions/test_event")
+        with open(filename) as fhdl:
+            subscriptions.append({
+                'target': 'fake-id_0'
+            })
+            self.assertEqual(json.load(fhdl), subscriptions)
+
+        Configs._instance = None
+        Storage._instance = None
+        os.unlink(filename)
+        os.rmdir(os.path.join(STORAGE_DIR, "subscriptions"))
+        os.removedirs(STORAGE_DIR)
 
     def test_handle_message_timeout(self):
         """Test Await.handle_message() with 'triggered' message."""

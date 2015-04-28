@@ -38,7 +38,7 @@ class TestCall(unittest.TestCase):
         self.assertEqual(result, 'ignored')
 
     def test_handle_message_wrong_target(self):
-        """Test Call.handle_message() when workitem targeted not to it."""
+        """Test Call.handle_message() when message targeted not to it."""
 
         msg = Message(name='start', target='fake-id_10', origin='fake-id')
         self.fexpr.state = 'active'

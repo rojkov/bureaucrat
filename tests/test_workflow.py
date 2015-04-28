@@ -28,7 +28,7 @@ processdsc = """<?xml version="1.0"?>
         </switch>
     </sequence>
     <while>
-        <condition>workitem.fields["counter"] &lt; 4</condition>
+        <condition>context["counter"] &lt; 4</condition>
         <action participant="participant1"></action>
         <action participant="participant2"></action>
     </while>
