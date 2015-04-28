@@ -127,24 +127,93 @@ class FlowExpression(object):
         for child, childstate in zip(self.children, state["children"]):
             child.reset_state(childstate)
 
-    def handle_workitem(self, channel, workitem):
-        """Handle workitem."""
+    def handle_workitem(self, channel, msg):
+        """Handle message."""
         raise NotImplementedError()
 
-    def _can_be_ignored(self, workitem):
-        """Check if workitem can be safely ignored."""
+    def _can_be_ignored(self, msg):
+        """Check if message can be safely ignored."""
 
         can_be_ignored = False
 
         if self.state == 'completed':
-            LOG.debug("%r is done already, %r is ignored", self, workitem)
+            LOG.debug("%r is done already, %r is ignored", self, msg)
             can_be_ignored = True
-        elif workitem.target is not None and \
-                not workitem.target.startswith(self.id):
-            LOG.debug("%r is not for %r", workitem, self)
+        elif msg.target is not None and \
+                not msg.target.startswith(self.id):
+            LOG.debug("%r is not for %r", msg, self)
             can_be_ignored = True
 
         return can_be_ignored
+
+    def _was_activated(self, channel, msg, guard=lambda: True):
+        """Check if it's activation message."""
+
+        if self._is_start_message(msg):
+
+            if not guard():
+                LOG.debug("Conditions for %r don't hold", self)
+                self.state = 'completed'
+                channel.send(Message(name='completed', origin=self.id,
+                                     target=self.parent_id))
+                return True
+
+            if len(self.children) > 0:
+                self.state = 'active'
+                channel.send(Message(name='start', origin=self.id,
+                                     target=self.children[0].id))
+            else:
+                self.state = 'completed'
+                channel.send(Message(name='completed', origin=self.id,
+                                     target=self.parent_id))
+            return True
+        else:
+            return False
+
+    def _was_sequence_completed(self, channel, msg, guard=lambda: True,
+                                compensate=lambda: None):
+        """Check if all children in sequence were completed."""
+
+        res = False
+        if self._is_complete_message(msg):
+            for index, child in zip(range(0, len(self.children)),
+                                    self.children):
+                if child.id == msg.origin:
+                    if (index + 1) < len(self.children):
+                        channel.send(Message(name='start', origin=self.id,
+                                             target="%s_%d" % (self.id,
+                                                               index + 1)))
+                    else:
+                        if guard():
+                            self.state = 'completed'
+                            channel.send(Message(name='completed',
+                                                 origin=self.id,
+                                                 target=self.parent_id))
+                        else:
+                            compensate()
+                    res = True
+                    break
+        return res
+
+    def _was_consumed_by_child(self, channel, msg):
+        """Check if a child consumed the message."""
+
+        res = False
+        for child in self.children:
+            if child.handle_workitem(channel, msg) == 'consumed':
+                res = True
+                break
+        return res
+
+    def _is_start_message(self, msg):
+        """Return True if the message destined to start the activity."""
+        return self.state == 'ready' and msg.name == 'start' \
+                and msg.target == self.id
+
+    def _is_complete_message(self, msg):
+        """Return True if the message is from completed child."""
+        return self.state == 'active' and msg.name == 'completed' \
+                and msg.target == self.id
 
     def reset_children(self):
         """Reset children state to ready."""
@@ -173,33 +242,14 @@ class Process(FlowExpression):
         """Handle message in process instance."""
         LOG.debug("Handling %r in %r", msg, self)
 
-        if msg.name == 'start' and msg.target == self.id:
-            if len(self.children) > 0:
-                self.state = 'active'
-                channel.send(Message(name='start', origin=self.id,
-                                     target=self.children[0].id))
-            else:
-                self.state = 'completed'
-                channel.send(Message(name='completed', origin=self.id,
-                                     target=self.parent_id))
+        if self._was_activated(channel, msg):
             return 'consumed'
 
-        if self.state == 'active' and msg.name == 'completed' \
-                                  and msg.target == self.id:
-            for index, child in zip(range(0, len(self.children)), self.children):
-                if child.id == msg.origin:
-                    if (index + 1) < len(self.children):
-                        channel.send(Message(name='start', origin=self.id,
-                                             target="%s_%d" % (self.id, (index + 1))))
-                    else:
-                        self.state = 'completed'
-                        channel.send(Message(name='completed',
-                                             origin=self.id, target=self.parent_id))
-                    return 'consumed'
+        if self._was_sequence_completed(channel, msg):
+            return 'consumed'
 
-        for child in self.children:
-            if child.handle_workitem(channel, msg) == 'consumed':
-                return 'consumed'
+        if self._was_consumed_by_child(channel, msg):
+            return 'consumed'
 
         return 'ignored'
 
@@ -214,34 +264,14 @@ class Sequence(FlowExpression):
         if self._can_be_ignored(msg):
             return 'ignored'
 
-        if self.state == 'active' and msg.name == 'completed' \
-                                  and msg.target == self.id:
-            for index, child in zip(range(0, len(self.children)), self.children):
-                if child.id == msg.origin:
-                    if (index + 1) < len(self.children):
-                        channel.send(Message(name='start', origin=self.id,
-                                             target="%s_%d" % (self.id, index + 1)))
-                    else:
-                        self.state = 'completed'
-                        channel.send(Message(name='completed',
-                                             origin=self.id, target=self.parent_id))
-                    return 'consumed'
-
-        if self.state == 'ready' and msg.name == 'start' \
-                                 and msg.target == self.id:
-            if len(self.children) > 0:
-                self.state = 'active'
-                channel.send(Message(name='start', origin=self.id,
-                                     target=self.children[0].id))
-            else:
-                self.state = 'completed'
-                channel.send(Message(name='completed',
-                                     origin=self.id, target=self.parent_id))
+        if self._was_activated(channel, msg):
             return 'consumed'
 
-        for child in self.children:
-            if child.handle_workitem(channel, msg) == 'consumed':
-                return 'consumed'
+        if self._was_sequence_completed(channel, msg):
+            return 'consumed'
+
+        if self._was_consumed_by_child(channel, msg):
+            return 'consumed'
 
         return 'ignored'
 
@@ -267,7 +297,7 @@ class Action(FlowExpression):
             return 'ignored'
 
         result = 'ignore'
-        if self.state == 'ready' and msg.name == 'start':
+        if self._is_start_message(msg):
             LOG.debug("Activate participant %s", self.participant)
             self.state = 'active'
             channel.elaborate(self.participant, self.id,
@@ -308,7 +338,7 @@ class Delay(FlowExpression):
             return 'ignored'
 
         result = 'ignore'
-        if self.state == 'ready' and msg.name == 'start':
+        if self._is_start_message(msg):
             LOG.debug("Wait for %s", self.duration)
             self.state = 'active'
             instant = int(time.time()) + self.duration
@@ -374,7 +404,7 @@ class Await(FlowExpression):
             return 'ignored'
 
         result = 'ignore'
-        if self.state == 'ready' and msg.name == 'start':
+        if self._is_start_message(msg):
             LOG.debug("Wait for %s", self.event)
             self.state = 'active'
             workitem = Workitem() # TOOD: refactor
@@ -439,47 +469,14 @@ class Case(FlowExpression):
         if self._can_be_ignored(msg):
             return 'ignored'
 
-        if self.state == 'active' and msg.name == 'completed' \
-                                  and msg.target == self.id:
-            for index, child in zip(range(0, len(self.children)),
-                                    self.children):
-                if child.id == msg.origin:
-                    if (index + 1) < len(self.children):
-                        channel.send(Message(name='start', origin=self.id,
-                                             target="%s_%d" % (self.id, index + 1)))
-                    else:
-                        self.state = 'completed'
-                        channel.send(Message(name='completed',
-                                             target=self.parent_id,
-                                             origin=self.id))
-                    LOG.debug("Send %r to continue from %r. " + \
-                              "Activities total: %d",
-                              msg, self, len(self.children))
-                    return 'consumed'
-            LOG.warning("No origin found")
-
-        if self.state == 'ready' and msg.name == 'start' \
-                                 and msg.target == self.id:
-
-            if not self.evaluate():
-                LOG.debug("Conditions for %r don't hold", self)
-                return 'ignored'
-
-            if len(self.children) > 0:
-                self.state = 'active'
-                LOG.debug("Start handling message in children")
-                channel.send(Message(name='start', origin=self.id,
-                                     target=self.children[0].id))
-            else:
-                self.state = 'completed'
-                channel.send(Message(name='completed', origin=self.id,
-                                     target=self.parent_id))
-
+        if self._was_activated(channel, msg):
             return 'consumed'
 
-        for child in self.children:
-            if child.handle_workitem(channel, msg) == 'consumed':
-                return 'consumed'
+        if self._was_sequence_completed(channel, msg):
+            return 'consumed'
+
+        if self._was_consumed_by_child(channel, msg):
+            return 'consumed'
 
         LOG.debug("%r was ignored in %r", msg, self)
         return 'ignored'
@@ -498,15 +495,7 @@ class Switch(FlowExpression):
         if self._can_be_ignored(msg):
             return 'ignored'
 
-        if self.state == 'active' and msg.name == 'completed' \
-                                  and msg.target == self.id:
-            self.state = 'completed'
-            channel.send(Message(name='completed', origin=self.id,
-                                 target=self.parent_id))
-            return 'consumed'
-
-        if self.state == 'ready' and msg.name == 'start' \
-                                 and msg.target == self.id:
+        if self._is_start_message(msg):
             for case in self.children:
                 if case.evaluate():
                     self.state = 'active'
@@ -519,9 +508,14 @@ class Switch(FlowExpression):
                 self.state = 'completed'
             return 'consumed'
 
-        for child in self.children:
-            if child.handle_workitem(channel, msg) == 'consumed':
-                return 'consumed'
+        if self._is_complete_message(msg):
+            self.state = 'completed'
+            channel.send(Message(name='completed', origin=self.id,
+                                 target=self.parent_id))
+            return 'consumed'
+
+        if self._was_consumed_by_child(channel, msg):
+            return 'consumed'
 
         return 'ignored'
 
@@ -568,53 +562,22 @@ class While(FlowExpression):
         if self._can_be_ignored(msg):
             return 'ignored'
 
-        if self.state == 'ready' and msg.name == 'start' \
-                                 and msg.target == self.id:
-
-            if not self.evaluate():
-                LOG.debug("Conditions for %r don't hold", self)
-                self.state = 'completed'
-                channel.send(Message(name='completed', origin=self.id,
-                                     target=self.parent_id))
-                return 'consumed'
-
-            if len(self.children) > 0:
-                self.state = 'active'
-                LOG.debug("Start handling message in children")
-                channel.send(Message(name='start', origin=self.id,
-                                     target=self.children[0].id))
-            else:
-                raise WhileError("While activity can't be empty")
-
+        if self._was_activated(channel, msg, self.evaluate):
             return 'consumed'
 
-        if self.state == 'active' and msg.name == 'completed' \
-                                  and msg.target == self.id:
-            for index, child in zip(range(0, len(self.children)),
-                                    self.children):
-                if child.id == msg.origin:
-                    if (index + 1) < len(self.children):
-                        channel.send(Message(name='start', origin=self.id,
-                                             target="%s_%d" % (self.id, index + 1)))
-                    else:
-                        if not self.evaluate():
-                            self.state = 'completed'
-                            channel.send(Message(name='completed',
-                                                 origin=self.id, target=self.parent_id))
-                        else:
-                            self.reset_children()
-                            channel.send(Message(name='start',
-                                                 origin=self.id,
-                                                 target=self.children[0].id))
-                    LOG.debug("Trigger %r to continue from %r. " + \
-                              "Activities total: %d",
-                              msg, self, len(self.children))
-                    return 'consumed'
-            LOG.warning("No origin found")
+        def restart():
+            self.reset_children()
+            channel.send(Message(name='start', target=self.children[0].id,
+                                 origin=self.id))
 
-        for child in self.children:
-            if child.handle_workitem(channel, msg) == 'consumed':
-                return 'consumed'
+        if self._was_sequence_completed(channel, msg,
+                                        lambda: not self.evaluate(), restart):
+            return 'consumed'
+
+        if self._was_consumed_by_child(channel, msg):
+            return 'consumed'
+
+        return 'ignored'
 
 class All(FlowExpression):
     """All activity."""
@@ -627,8 +590,7 @@ class All(FlowExpression):
         if self._can_be_ignored(msg):
             return 'ignored'
 
-        if self.state == 'ready' and msg.name == 'start' \
-                                 and msg.target == self.id:
+        if self._is_start_message(msg):
             if len(self.children) > 0:
                 self.state = 'active'
                 for child in self.children:
@@ -641,8 +603,7 @@ class All(FlowExpression):
                                      target=self.parent_id))
             return 'consumed'
 
-        if self.state == 'active' and msg.name == 'completed' \
-                                  and msg.target == self.id:
+        if self._is_complete_message(msg):
             for child in self.children:
                 if child.state == 'active':
                     break
@@ -652,9 +613,10 @@ class All(FlowExpression):
                                      target=self.parent_id))
             return 'consumed'
 
-        for child in self.children:
-            if child.handle_workitem(channel, msg) == 'consumed':
-                return 'consumed'
+        if self._was_consumed_by_child(channel, msg):
+            return 'consumed'
+
+        return 'ignored'
 
 class Call(FlowExpression):
     """Call activity."""
@@ -674,7 +636,7 @@ class Call(FlowExpression):
             return 'ignored'
 
         result = 'consumed'
-        if self.state == 'ready' and msg.name == 'start':
+        if self._is_start_message(msg):
             self.state = 'active'
             LOG.debug("Calling a subprocess process")
 
@@ -691,8 +653,7 @@ class Call(FlowExpression):
                                       properties=pika.BasicProperties(
                                           delivery_mode=2
                                       ))
-        elif self.state == 'active' and msg.name == 'completed' \
-                                    and msg.target == self.id:
+        elif self._is_complete_message(msg):
             LOG.debug("Subprocess initiated in %s has completed", self.id)
             self.state = 'completed'
             # reply to parent that the child is done
