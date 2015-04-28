@@ -6,6 +6,8 @@ class Message(object):
     """Message structure."""
 
     content_type = 'application/x-bureaucrat-message'
+    # needed for taskqueue
+    mime_type = 'application/x-bureaucrat-message'
 
     def __init__(self, name, target, origin, payload=None):
         """initialize."""
@@ -22,12 +24,22 @@ class Message(object):
                 (self._name, self._target, self._origin)
 
     @staticmethod
-    def load(bodystr):
+    def loads(bodystr):
         """Load from string."""
         body = json.loads(bodystr)
-        msg = Message(body["message"], body["target"], body["origin"],
+        msg = Message(body["name"], body["target"], body["origin"],
                       body["payload"])
         return msg
+
+    # needed for taskqueue
+    def dumps(self):
+        """Return message as string."""
+        return json.dumps({
+            "name": self._name,
+            "target": self._target,
+            "origin": self._origin,
+            "payload": self._payload
+        })
 
     @property
     def name(self):

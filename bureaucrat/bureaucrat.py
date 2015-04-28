@@ -17,7 +17,6 @@ from optparse import OptionParser
 from ConfigParser import ConfigParser
 
 from bureaucrat.workflow import Workflow
-from bureaucrat.workitem import Workitem, WorkitemError
 from bureaucrat.schedule import Schedule
 from bureaucrat.configs import Configs
 from bureaucrat.storage import Storage
@@ -130,12 +129,8 @@ class Bureaucrat(object):
         LOG.debug("Handling message with Body: %r", body)
         try:
             if header.content_type == Message.content_type:
-                msg = Message.load(body)
-            else:
-                witem = Workitem.loads(body)
-                msg = Message(name=witem.name, target=witem.target,
-                              origin=witem.origin, payload=witem.fields)
-        except WorkitemError as err:
+                msg = Message.loads(body)
+        except KeyError as err:
             # Report error and accept message
             LOG.error("%s", err)
             channel.basic_ack(method.delivery_tag)

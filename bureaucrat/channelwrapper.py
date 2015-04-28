@@ -24,7 +24,7 @@ class ChannelWrapper(object):
         """Send a message to the target with payload attached."""
 
         body = {
-            "message": message.name,
+            "name": message.name,
             "target": message.target,
             "origin": message.origin,
             "payload": message.payload
@@ -39,29 +39,27 @@ class ChannelWrapper(object):
                                ))
 
     def elaborate(self, participant, origin, payload):
-        """Elaborate the workitem at a given participant."""
+        """Elaborate the payload at a given participant."""
 
         config = Configs.instance()
 
         if config.taskqueue_type == 'taskqueue':
             body = {
-                "header": {
-                    "message": 'response',
-                    "target": origin,
-                    "origin": origin
-                },
-                "fields": payload
+                "name": 'response',
+                "target": origin,
+                "origin": origin,
+                "payload": payload
             }
             self._ch.basic_publish(exchange='',
                                    routing_key="worker_%s" % participant,
                                    body=json.dumps(body),
                                    properties=pika.BasicProperties(
                                        delivery_mode=2,
-                                       content_type='application/x-bureaucrat-workitem'
+                                       content_type='application/x-bureaucrat-message'
                                    ))
         elif config.taskqueue_type == 'celery':
             body = {
-                "message": 'response',
+                "name": 'response',
                 "target": origin,
                 "origin": origin,
                 "payload": payload

@@ -34,7 +34,7 @@ setup(
             'participant2 = bureaucrat.workers.participant2:Worker.factory'
         ],
         'workitems': [
-            'application/x-bureaucrat-workitem = bureaucrat.workitem:Workitem'
+            'application/x-bureaucrat-message = bureaucrat.message:Message'
         ]
     }
 )

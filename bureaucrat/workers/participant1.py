@@ -14,10 +14,10 @@ class Worker(BaseWorker):
 
     def handle_task(self, workitem):
         LOG.debug("Workitem: %r", workitem)
-        if "counter" not in workitem.fields:
-            workitem.fields["counter"] = 0
+        if "counter" not in workitem._payload:
+            workitem._payload["counter"] = 0
         else:
-            workitem.fields["counter"] += 1
-        workitem.fields["some_process"] = PROCESS_DEF
+            workitem._payload["counter"] += 1
+        workitem._payload["some_process"] = PROCESS_DEF
         return workitem
 
