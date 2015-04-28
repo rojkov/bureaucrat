@@ -8,6 +8,7 @@ import xml.etree.ElementTree as ET
 from bureaucrat.storage import Storage
 from bureaucrat.storage import lock_storage
 from bureaucrat.flowexpression import Process
+from bureaucrat.context import Context
 
 LOG = logging.getLogger(__name__)
 
@@ -35,7 +36,7 @@ class Workflow(object):
         if "parent" in xmlelement.attrib:
             parent_id = xmlelement.attrib["parent"]
 
-        process = Process(parent_id, xmlelement, pid)
+        process = Process(parent_id, xmlelement, pid, Context())
         workflow = Workflow(process)
         workflow.save()
         return workflow
@@ -55,7 +56,7 @@ class Workflow(object):
         if "parent" in xmlelement.attrib:
             parent_id = xmlelement.attrib["parent"]
 
-        process = Process(parent_id, xmlelement, process_id)
+        process = Process(parent_id, xmlelement, process_id, Context())
         process.reset_state(json.loads(storage.load("process", process.id)))
         return Workflow(process)
 

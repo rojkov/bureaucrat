@@ -4,6 +4,7 @@ from mock import Mock
 
 from bureaucrat.flowexpression import FlowExpression
 from bureaucrat.flowexpression import FlowExpressionError
+from bureaucrat.context import Context
 
 def fake_et_iterator(parent):
     """Fake iterator over child elements."""
@@ -35,7 +36,8 @@ class TestFlowExpression(unittest.TestCase):
             while False:
                 yield None
         self.xml_element.__iter__ = fake_iterator
-        fexpr = FlowExpression('fake-id', self.xml_element, 'fake-id_0')
+        fexpr = FlowExpression('fake-id', self.xml_element, 'fake-id_0',
+                               Context())
         self.assertTrue(fexpr.id == 'fake-id_0')
 
     def test_constructor(self):
@@ -47,6 +49,7 @@ class TestFlowExpression(unittest.TestCase):
         class TestExpression(FlowExpression):
             allowed_child_types = ('sequence',)
 
-        fexpr = TestExpression('fake-id', self.xml_element, 'fake-id_0')
+        fexpr = TestExpression('fake-id', self.xml_element, 'fake-id_0',
+                               Context())
         self.assertTrue(fexpr.id == 'fake-id_0')
         self.assertTrue(len(fexpr.children) == 1)

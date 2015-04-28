@@ -2,9 +2,7 @@ from __future__ import absolute_import
 
 import logging
 import json
-import pika
 
-from bureaucrat.configs import Configs
 from bureaucrat.storage import Storage
 from bureaucrat.storage import lock_storage
 
@@ -14,10 +12,10 @@ class WorkitemError(Exception):
     """Workitem error."""
 
 
-WORKITEM_MIME_TYPE = 'application/x-bureaucrat-workitem'
-
 class Workitem(object):
     """Work item."""
+
+    mime_type = 'application/x-bureaucrat-workitem'
 
     def __init__(self, fields=None):
         """Work item constructor."""
@@ -48,9 +46,16 @@ class Workitem(object):
             assert delivery["fields"] is not None
             self = cls(delivery["fields"])
             self._header = delivery["header"]
+            LOG.debug("loaded %r", self)
             return self
         except (ValueError, KeyError, TypeError, AssertionError):
             raise WorkitemError("Can't parse workitem")
+
+    def dumps(self):
+        return json.dumps({
+            "header": self._header,
+            "fields": self._fields
+        })
 
     @property
     def origin(self):
@@ -76,46 +81,10 @@ class Workitem(object):
         return self._fields
 
     @property
-    def message(self):
+    def name(self):
         """Return workitem's message name."""
 
         return self._header["message"]
-
-    def send(self, channel, message, target, origin):
-        """Send a message to the target with the workitem attached."""
-
-        body = {
-            "header": {
-                "message": message,
-                "target": target,
-                "origin": origin
-            },
-            "fields": self._fields
-        }
-        channel.basic_publish(exchange='',
-                              routing_key=Configs.instance().message_queue,
-                              body=json.dumps(body),
-                              properties=pika.BasicProperties(
-                                  delivery_mode=2,
-                                  content_type=WORKITEM_MIME_TYPE
-                              ))
-
-    def schedule_event(self, channel, instant, code, target):
-        """Schedule event for the context."""
-        body = {
-            "instant": instant,
-            "code": code,
-            "target": target,
-            "context": self._fields
-        }
-        channel.basic_publish(exchange='',
-                              routing_key="bureaucrat_schedule",
-                              body=json.dumps(body),
-                              properties=pika.BasicProperties(
-                                  delivery_mode=2,
-                                  content_type='application/json',
-                                  content_encoding='utf-8'
-                              ))
 
     @lock_storage
     def subscribe(self, event, target):
@@ -130,62 +99,3 @@ class Workitem(object):
         })
         storage.save("subscriptions", event, json.dumps(subscriptions))
 
-    def elaborate(self, channel, participant, origin):
-        """Elaborate the workitem at a given participant."""
-
-        config = Configs.instance()
-
-        if config.taskqueue_type == 'taskqueue':
-            body = {
-                "header": {
-                    "message": 'response',
-                    "target": origin,
-                    "origin": origin
-                },
-                "fields": self._fields
-            }
-            channel.basic_publish(exchange='',
-                                  routing_key="worker_%s" % participant,
-                                  body=json.dumps(body),
-                                  properties=pika.BasicProperties(
-                                      delivery_mode=2,
-                                      content_type=WORKITEM_MIME_TYPE
-                                  ))
-        elif config.taskqueue_type == 'celery':
-            body = {
-                "header": {
-                    "message": 'response',
-                    "target": origin,
-                    "origin": origin
-                },
-                "fields": self._fields
-            }
-            # This is a message in the format acceptable by Celery.
-            # The exact format can be found in
-            # celery.app.amqp.TaskProducer.publish_task()
-            celery_msg = {
-                "task": participant,
-                "id": self.target_pid,
-                "args": (body, ),
-                "kwargs": {},
-                "retries": 0,
-                "eta": None,
-                "expires": None,
-                "utc": True,
-                "callbacks": None,
-                "errbacks": None,
-                "timelimit": (None, None),
-                "taskset": None,
-                "chord": None
-            }
-            channel.basic_publish(exchange='celery',
-                                  routing_key="celery",
-                                  body=json.dumps(celery_msg),
-                                  properties=pika.BasicProperties(
-                                      delivery_mode=2,
-                                      content_type='application/json',
-                                      content_encoding='utf-8'
-                                  ))
-        else:
-            raise WorkitemError("Unknown task queue type: %s" % \
-                                config.taskqueue_type)

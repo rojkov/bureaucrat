@@ -22,6 +22,8 @@ from bureaucrat.schedule import Schedule
 from bureaucrat.configs import Configs
 from bureaucrat.storage import Storage
 from bureaucrat.storage import lock_storage
+from bureaucrat.message import Message
+from bureaucrat.channelwrapper import ChannelWrapper
 
 LOG = logging.getLogger(__name__)
 
@@ -114,9 +116,9 @@ class Bureaucrat(object):
         LOG.debug("Header: %r", header)
         LOG.debug("Body: %r", body)
         wflow = Workflow.create_from_string(body, "%s" % uuid.uuid4())
-        workitem = Workitem()
-        workitem.send(channel, message='start', target=wflow.process.id,
-                      origin='')
+        chwrapper = ChannelWrapper(channel)
+        chwrapper.send(Message(name='start', target=wflow.process.id,
+                               origin=''))
         channel.basic_ack(method.delivery_tag)
 
     @log_trace
@@ -127,19 +129,25 @@ class Bureaucrat(object):
         LOG.debug("Header: %r", header)
         LOG.debug("Handling workitem with Body: %r", body)
         try:
-            workitem = Workitem.loads(body)
+            if header.content_type == Message.content_type:
+                msg = Message.load(body) # TODO: rename 'workitem'
+            else:
+                witem = Workitem.loads(body)
+                msg = Message(name=witem.name, target=witem.target,
+                              origin=witem.origin, payload=witem.fields)
         except WorkitemError as err:
             # Report error and accept message
             LOG.error("%s", err)
             channel.basic_ack(method.delivery_tag)
             return
 
-        if workitem.target == '' and workitem.message == 'completed':
-            LOG.debug("The process %s has finished", workitem.origin)
-            Workflow.load(workitem.origin).delete()
+        if msg.target == '' and msg.name == 'completed':
+            LOG.debug("The process %s has finished", msg.origin)
+            # TODO: delete subprocesses too
+            Workflow.load(msg.origin).delete()
         else:
-            wflow = Workflow.load(workitem.target_pid)
-            wflow.process.handle_workitem(channel, workitem)
+            wflow = Workflow.load(msg.target_pid)
+            wflow.process.handle_workitem(ChannelWrapper(channel), msg)
             wflow.save()
         channel.basic_ack(method.delivery_tag)
 
@@ -151,7 +159,7 @@ class Bureaucrat(object):
         LOG.debug("Handling workitem with Body: %r", body)
         sch = json.loads(body)
         self.schedule.register(instant=sch["instant"], code=sch["code"],
-                               target=sch["target"], context=sch["context"])
+                               target=sch["target"])
         channel.basic_ack(method.delivery_tag)
 
     def handle_alarm(self, signum, frame):
@@ -174,10 +182,9 @@ class Bureaucrat(object):
             subscriptions = json.loads(storage.load("subscriptions",
                                                     eventname))
             for subscr in subscriptions:
-                subscr["context"]["event"] = msg
-                workitem = Workitem(subscr["context"])
-                workitem.send(channel, message='triggered',
-                              origin='', target=subscr["target"])
+                wmsg = Message(name='triggered', target=subscr["target"],
+                               origin='', payload=msg)
+                ChannelWrapper(channel).send(wmsg)
             storage.delete("subscriptions", eventname)
         channel.basic_ack(method.delivery_tag)
 
@@ -189,7 +196,7 @@ class Bureaucrat(object):
         self.connection = pika.BlockingConnection(config.amqp_params)
         LOG.debug("Bureaucrat connected")
         self.channel = self.connection.channel()
-        self.schedule = Schedule(self.channel)
+        self.schedule = Schedule(ChannelWrapper(self.channel))
         self.channel.queue_declare(queue="bureaucrat", durable=True,
                                    exclusive=False, auto_delete=False)
         self.channel.queue_declare(queue=config.message_queue, durable=True,

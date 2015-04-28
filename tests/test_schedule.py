@@ -10,6 +10,7 @@ from mock import Mock
 from bureaucrat.schedule import Schedule
 from bureaucrat.configs import Configs
 from bureaucrat.storage import Storage
+from bureaucrat.message import Message
 
 STORAGE_DIR = '/tmp/unittest-processes'
 
@@ -38,12 +39,11 @@ class TestSchedule(unittest.TestCase):
 
         instant = 10000
         self.schedule.register(code="timeout", instant=instant,
-                               target="fake-id", context={})
+                               target="fake-id")
         storage = Storage.instance()
         schedules = [{
             "code": "timeout",
-            "target": "fake-id",
-            "context": {}
+            "target": "fake-id"
         }]
         self.assertEqual(storage.load("schedule", str(instant)),
                          json.dumps(schedules))
@@ -56,17 +56,12 @@ class TestSchedule(unittest.TestCase):
         storage = Storage.instance()
         schedules = [{
             "code": "timeout",
-            "target": "fake-id",
-            "context": {}
+            "target": "fake-id"
         }]
         storage.save("schedule", str(instant), json.dumps(schedules))
-        with patch('bureaucrat.schedule.Workitem') as mock_wiclass:
-            mock_wi = Mock()
-            mock_wiclass.return_value = mock_wi
+        with patch('bureaucrat.schedule.Message') as MockMessage:
+            newmsg = Message(name='timeout', target='fake-id', origin='')
+            MockMessage.return_value = newmsg
             self.schedule.handle_alarm()
-            mock_wiclass.assert_called_once()
-            mock_wi.send.assert_called_once_with(self.ch,
-                                                 message='timeout',
-                                                 origin='',
-                                                 target='fake-id')
-        self.assertFalse(storage.exists("schedule", str(instant)))
+            self.schedule.channel.send.assert_called_once_with(newmsg)
+            self.assertFalse(storage.exists("schedule", str(instant)))

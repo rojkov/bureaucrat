@@ -5,6 +5,8 @@ from mock import Mock
 from mock import patch
 
 from bureaucrat.flowexpression import Process
+from bureaucrat.context import Context
+from bureaucrat.message import Message
 
 processdsc = """<?xml version="1.0"?>
 <process>
@@ -18,68 +20,70 @@ class TestProcess(unittest.TestCase):
 
     def setUp(self):
         xml_element = ET.fromstring(processdsc)
-        self.fexpr = Process('', xml_element, 'fake-id')
+        self.fexpr = Process('', xml_element, 'fake-id', Context())
         self.ch = Mock()
-        self.wi = Mock()
-        self.wi.send = Mock()
 
     def test_handle_workitem_start(self):
         """Test Process.handle_workitem() with start message."""
 
-        self.wi.message = 'start'
-        self.wi.target = 'fake-id'
-        self.wi.origin = ''
+        msg = Message(name='start', target='fake-id', origin='')
+        newmsg = Message(name='start', target='fake-id_0', origin='fake-id')
         self.fexpr.state = 'ready'
-        with patch('bureaucrat.flowexpression.Workitem') as mock_wiclass:
-            mock_wi = Mock()
-            mock_wiclass.return_value = mock_wi
-            result = self.fexpr.handle_workitem(self.ch, self.wi)
-            self.assertTrue(result == 'consumed')
-            self.assertTrue(self.fexpr.state == 'active')
-            mock_wiclass.assert_called_once()
-            mock_wi.send.assert_called_once_with(self.ch, message='start',
-                                                 target='fake-id_0',
-                                                 origin='fake-id')
+        with patch('bureaucrat.flowexpression.Message') as MockMessage:
+            MockMessage.return_value = newmsg
+            result = self.fexpr.handle_workitem(self.ch, msg)
+            self.assertEqual(result, 'consumed')
+            self.assertEqual(self.fexpr.state, 'active')
+            MockMessage.assert_called_once_with(name='start',
+                                                target='fake-id_0',
+                                                origin='fake-id')
+            self.ch.send.assert_called_once_with(newmsg)
 
     def test_handle_workitem_completed1(self):
         """Test Process.handle_workitem() with completed msg from first child."""
 
-        self.wi.message = 'completed'
-        self.wi.target = 'fake-id'
-        self.wi.origin = 'fake-id_0'
+        msg = Message(name='completed', target='fake-id', origin='fake-id_0')
         self.fexpr.state = 'active'
-        result = self.fexpr.handle_workitem(self.ch, self.wi)
-        self.assertTrue(result == 'consumed')
-        self.assertTrue(self.fexpr.state == 'active')
-        self.wi.send.assert_called_once_with(self.ch, message='start',
-                                             target='fake-id_1',
-                                             origin='fake-id')
+        newmsg = Message(name='start', target='fake-id_1', origin='fake-id')
+        with patch('bureaucrat.flowexpression.Message') as MockMessage:
+            MockMessage.return_value = newmsg
+            result = self.fexpr.handle_workitem(self.ch, msg)
+            self.assertEqual(result, 'consumed')
+            self.assertEqual(self.fexpr.state, 'active')
+            MockMessage.assert_called_once_with(name='start',
+                                                target='fake-id_1',
+                                                origin='fake-id')
+            self.ch.send.assert_called_once_with(newmsg)
 
     def test_handle_workitem_completed2(self):
         """Test Process.handle_workitem() with completed msg from last child."""
 
-        self.wi.message = 'completed'
-        self.wi.target = 'fake-id'
-        self.wi.origin = 'fake-id_1'
+        msg = Message(name='completed', target='fake-id', origin='fake-id_1')
         self.fexpr.state = 'active'
-        result = self.fexpr.handle_workitem(self.ch, self.wi)
-        self.assertTrue(result == 'consumed')
-        self.assertTrue(self.fexpr.state == 'completed')
-        self.wi.send.assert_called_once_with(self.ch, message='completed',
-                                             target='',
-                                             origin='fake-id')
+        newmsg = Message(name='completed', target='', origin='fake-id')
+        with patch('bureaucrat.flowexpression.Message') as MockMessage:
+            MockMessage.return_value = newmsg
+            result = self.fexpr.handle_workitem(self.ch, msg)
+            self.assertEqual(result, 'consumed')
+            self.assertEqual(self.fexpr.state, 'completed')
+            MockMessage.assert_called_once_with(name='completed', target='',
+                                                origin='fake-id')
+            self.ch.send.assert_called_once_with(newmsg)
 
     def test_handle_workitem_response(self):
         """Test Process.handle_workitem() with response msg for child."""
 
-        self.wi.message = 'response'
-        self.wi.target = 'fake-id_0'
-        self.wi.origin = 'fake-id_0'
+        msg = Message(name='response', target='fake-id_0', origin='fake-id_0')
         self.fexpr.state = 'active'
         self.fexpr.children[0].state = 'active'
-        result = self.fexpr.handle_workitem(self.ch, self.wi)
-        self.assertTrue(result == 'consumed')
-        self.assertTrue(self.fexpr.state == 'active')
-        self.wi.send.assert_called_once_with(self.ch, message='completed',
-                                             target='fake-id',
-                                             origin='fake-id_0')
+        newmsg = Message(name='completed', target='fake-id',
+                         origin='fake-id_0')
+        with patch('bureaucrat.flowexpression.Message') as MockMessage:
+            MockMessage.return_value = newmsg
+            result = self.fexpr.handle_workitem(self.ch, msg)
+            self.assertEqual(result, 'consumed')
+            self.assertEqual(self.fexpr.state, 'active')
+            MockMessage.assert_called_once_with(name='completed',
+                                                target='fake-id',
+                                                origin='fake-id_0')
+            self.ch.send.assert_called_once_with(newmsg)

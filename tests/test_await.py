@@ -5,6 +5,8 @@ from mock import Mock
 from mock import patch
 
 from bureaucrat.flowexpression import Await
+from bureaucrat.context import Context
+from bureaucrat.message import Message
 
 processdsc = """<?xml version="1.0"?>
 <await event="test_event">
@@ -18,51 +20,48 @@ class TestAwait(unittest.TestCase):
     def setUp(self):
         """Set up SUT."""
         xml_element = ET.fromstring(processdsc)
-        self.fexpr = Await('fake-id', xml_element, 'fake-id_0')
-        self.wi = Mock()
+        self.fexpr = Await('fake-id', xml_element, 'fake-id_0', Context())
         self.ch = Mock()
-        self.wi.send = Mock()
-        self.wi.subscribe = Mock()
 
     # TODO: move these two cases to a base class
     def test_handle_workitem_completed_state(self):
-        """Test Await.handle_workitem() when While is completed."""
+        """Test Await.handle_workitem() when Await is completed."""
 
+        msg = Message(name='start', target='fake-id_0', origin='fake-id')
         self.fexpr.state = 'completed'
-        result = self.fexpr.handle_workitem(self.ch, self.wi)
-        self.assertTrue(result == 'ignored')
+        result = self.fexpr.handle_workitem(self.ch, msg)
+        self.assertEqual(result, 'ignored')
 
     def test_handle_workitem_wrong_target(self):
-        """Test Await.handle_workitem() when workitem targeted not to it."""
+        """Test Await.handle_workitem() when message targeted not to it."""
 
-        self.wi.target = 'fake-id_10'
+        msg = Message(name='start', target='fake-id_10', origin='fake-id')
         self.fexpr.state = 'active'
-        result = self.fexpr.handle_workitem(self.ch, self.wi)
-        self.assertTrue(result == 'ignored')
+        result = self.fexpr.handle_workitem(self.ch, msg)
+        self.assertEqual(result, 'ignored')
 
     def test_handle_workitem_start(self):
         """Test Await.handle_workitem() with 'start' message."""
-        self.wi.message = 'start'
-        self.wi.target = 'fake-id_0'
-        self.wi.origin = 'fake-id'
+        msg = Message(name='start', target='fake-id_0', origin='fake-id')
         self.fexpr.state = 'ready'
-        result = self.fexpr.handle_workitem(self.ch, self.wi)
-        self.assertTrue(result == 'consumed')
-        self.assertTrue(self.fexpr.state == 'active')
-        self.wi.subscribe.assert_called_once_with(event='test_event',
-                                                  target='fake-id_0')
+        with patch('bureaucrat.flowexpression.Workitem') as MockWI:
+            witem = Mock()
+            MockWI.return_value = witem
+            result = self.fexpr.handle_workitem(self.ch, msg)
+            self.assertEqual(result, 'consumed')
+            self.assertEqual(self.fexpr.state, 'active')
+            witem.subscribe.assert_called_once_with(event='test_event',
+                                                    target='fake-id_0')
 
     def test_handle_workitem_timeout(self):
         """Test Await.handle_workitem() with 'triggered' message."""
 
-        self.wi.message = 'triggered'
-        self.wi.target = 'fake-id_0'
-        self.wi.origin = 'fake-id_0'
-        self.wi.fields = {}
+        msg = Message(name='triggered', target='fake-id_0', origin='fake-id_0')
+        newmsg = Message(name='completed', target='fake-id', origin='fake-id_0')
         self.fexpr.state = 'active'
-        result = self.fexpr.handle_workitem(self.ch, self.wi)
-        self.assertTrue(result == 'consumed')
-        self.assertTrue(self.fexpr.state == 'completed')
-        self.wi.send.assert_called_once_with(self.ch, message='completed',
-                                             origin='fake-id_0',
-                                             target='fake-id')
+        with patch('bureaucrat.flowexpression.Message') as MockMessage:
+            MockMessage.return_value = newmsg
+            result = self.fexpr.handle_workitem(self.ch, msg)
+            self.assertEqual(result, 'consumed')
+            self.assertEqual(self.fexpr.state, 'completed')
+            self.ch.send.assert_called_once_with(newmsg)

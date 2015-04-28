@@ -4,7 +4,7 @@ import logging
 import time
 import json
 
-from bureaucrat.workitem import Workitem
+from bureaucrat.message import Message
 from bureaucrat.storage import Storage
 from bureaucrat.storage import lock_storage
 
@@ -19,7 +19,7 @@ class Schedule(object):
         self.channel = channel
 
     @lock_storage
-    def register(self, code, instant, target, context):
+    def register(self, code, instant, target):
         """Register new schedule."""
         LOG.debug("Register '%s' for %s at %d", code, target, instant)
 
@@ -31,8 +31,7 @@ class Schedule(object):
             schedules = json.loads(storage.load("schedule", str(instant)))
         schedules.append({
             "code": code,
-            "target": target,
-            "context": context
+            "target": target
         })
         storage.save("schedule", str(instant), json.dumps(schedules))
 
@@ -47,9 +46,8 @@ class Schedule(object):
             if timestamp >= int(key):
                 schedules = json.loads(storage.load("schedule", key))
                 for sch in schedules:
-                    workitem = Workitem(sch["context"])
-                    workitem.send(self.channel, message=sch["code"],
-                                  origin="", target=sch["target"])
+                    self.channel.send(Message(name=sch["code"],
+                                              origin="", target=sch["target"]))
                     LOG.debug("Sent '%s' to %s", sch["code"],
                               sch["target"])
                 storage.delete("schedule", key)

@@ -81,5 +81,4 @@ class TestStorage(unittest.TestCase):
         self.assertEqual(['fake-key'], self.storage.keys("definition"))
         os.unlink(file_path)
         os.rmdir(os.path.join(STORAGE_DIR, "definition"))
-        with self.assertRaises(StorageError):
-            self.storage.keys("definition")
+        self.assertEqual(self.storage.keys("definition"), [])

@@ -1,8 +1,11 @@
 import unittest
 import xml.etree.ElementTree as ET
 from mock import Mock
+from mock import patch
 
 from bureaucrat.flowexpression import While
+from bureaucrat.context import Context
+from bureaucrat.message import Message
 
 processdsc_true = """<?xml version="1.0"?>
 <while>
@@ -27,49 +30,51 @@ class TestWhile(unittest.TestCase):
 
     def setUp(self):
         xml_element = ET.fromstring(self.processdsc)
-        self.fexpr = While('fake-id', xml_element, 'fake-id_0')
+        self.fexpr = While('fake-id', xml_element, 'fake-id_0', Context())
         self.ch = Mock()
-        self.wi = Mock()
-        self.wi.send = Mock()
 
     def test_handle_workitem_completed_state(self):
         """Test While.handle_workitem() when While is completed."""
 
+        msg = Message(name='start', target='fake-id_0', origin='fake-id')
         self.fexpr.state = 'completed'
-        result = self.fexpr.handle_workitem(self.ch, self.wi)
-        self.assertTrue(result == 'ignored')
+        result = self.fexpr.handle_workitem(self.ch, msg)
+        self.assertEqual(result, 'ignored')
 
     def test_handle_workitem_wrong_target(self):
-        """Test While.handle_workitem() when workitem targeted not to it."""
+        """Test While.handle_workitem() when message targeted not to it."""
 
-        self.wi.target = 'fake-id_1'
+        msg = Message(name='start', target='fake-id_10', origin='fake-id')
         self.fexpr.state = 'active'
-        result = self.fexpr.handle_workitem(self.ch, self.wi)
-        self.assertTrue(result == 'ignored')
+        result = self.fexpr.handle_workitem(self.ch, msg)
+        self.assertEqual(result, 'ignored')
 
     def test_handle_workitem_response(self):
-        """Test While.handle_workitem() with response workitem."""
+        """Test While.handle_workitem() with message workitem."""
 
-        self.wi.message = 'response'
-        self.wi.target = 'fake-id_0_0'
-        self.wi.origin = 'fake-id_0_0'
+        msg = Message(name='response', target='fake-id_0_0',
+                      origin='fake-id_0_0')
         self.fexpr.state = 'active'
         self.fexpr.children[0].state = 'active'
-        result = self.fexpr.handle_workitem(self.ch, self.wi)
-        self.assertTrue(result == 'consumed')
+        result = self.fexpr.handle_workitem(self.ch, msg)
+        self.assertEqual(result, 'consumed')
 
     def test_handle_workitem_completed_not_last(self):
         """Test While.handle_workitem() with completed msg from first child."""
 
-        self.wi.message = 'completed'
-        self.wi.target = 'fake-id_0'
-        self.wi.origin = 'fake-id_0_0'
+        msg = Message(name='completed', target='fake-id_0',
+                      origin='fake-id_0_0')
+        newmsg = Message(name='start', target='fake-id_0_1',
+                         origin='fake-id_0')
         self.fexpr.state = 'active'
-        result = self.fexpr.handle_workitem(self.ch, self.wi)
-        self.assertTrue(result == 'consumed')
-        self.wi.send.assert_called_once_with(self.ch, message='start',
-                                             target='fake-id_0_1',
-                                             origin='fake-id_0')
+        with patch('bureaucrat.flowexpression.Message') as MockMessage:
+            MockMessage.return_value = newmsg
+            result = self.fexpr.handle_workitem(self.ch, msg)
+            self.assertEqual(result, 'consumed')
+            MockMessage.assert_called_once_with(name='start',
+                                                target='fake-id_0_1',
+                                                origin='fake-id_0')
+            self.ch.send.assert_called_once_with(newmsg)
 
 class TestWhileTrueCondition(TestWhile):
     """Tests for While with conditions evaluated to True."""
@@ -79,30 +84,36 @@ class TestWhileTrueCondition(TestWhile):
     def test_handle_workitem_start(self):
         """Test While.handle_workitem() with start event."""
 
-        self.wi.message = 'start'
-        self.wi.target = 'fake-id_0'
-        self.wi.origin = ''
+        msg = Message(name='start', target='fake-id_0', origin='fake-id')
         self.fexpr.state = 'ready'
-        result = self.fexpr.handle_workitem(self.ch, self.wi)
-        self.assertTrue(result == 'consumed')
-        self.assertTrue(self.fexpr.state == 'active')
-        self.wi.send.assert_called_once_with(self.ch, message='start',
-                                             target='fake-id_0_0',
-                                             origin='fake-id_0')
+        newmsg = Message(name='start', target='fake-id_0_0',
+                         origin='fake-id_0')
+        with patch('bureaucrat.flowexpression.Message') as MockMessage:
+            MockMessage.return_value = newmsg
+            result = self.fexpr.handle_workitem(self.ch, msg)
+            MockMessage.assert_called_once_with(name='start',
+                                                target='fake-id_0_0',
+                                                origin='fake-id_0')
+            self.assertEqual(result, 'consumed')
+            self.assertEqual(self.fexpr.state, 'active')
+            self.ch.send.assert_called_once_with(newmsg)
 
     def test_handle_workitem_completed_last(self):
         """Test While.handle_workitem() with completed event from last child."""
 
-        self.wi.message = 'completed'
-        self.wi.target = 'fake-id_0'
-        self.wi.origin = 'fake-id_0_1'
+        msg = Message(name='completed', target='fake-id_0',
+                      origin='fake-id_0_1')
+        newmsg = Message(name='start', target='fake-id_0_0', origin='fake-id_0')
         self.fexpr.state = 'active'
-        result = self.fexpr.handle_workitem(self.ch, self.wi)
-        self.assertTrue(result == 'consumed')
-        self.assertTrue(self.fexpr.state == 'active')
-        self.wi.send.assert_called_once_with(self.ch, message='start',
-                                             target='fake-id_0_0',
-                                             origin='fake-id_0')
+        with patch('bureaucrat.flowexpression.Message') as MockMessage:
+            MockMessage.return_value = newmsg
+            result = self.fexpr.handle_workitem(self.ch, msg)
+            self.assertEqual(result, 'consumed')
+            self.assertEqual(self.fexpr.state, 'active')
+            MockMessage.assert_called_once_with(name='start',
+                                                target='fake-id_0_0',
+                                                origin='fake-id_0')
+            self.ch.send.assert_called_once_with(newmsg)
 
 class TestWhileFalseCondition(TestWhile):
     """Tests for While with conditions evaluated to False."""
@@ -110,29 +121,36 @@ class TestWhileFalseCondition(TestWhile):
     processdsc = processdsc_false
 
     def test_handle_workitem_start(self):
-        """Test While.handle_workitem() with start event."""
+        """Test While.handle_workitem() with start message."""
 
-        self.wi.message = 'start'
-        self.wi.target = 'fake-id_0'
-        self.wi.origin = 'fake-id'
+        msg = Message(name='start', target='fake-id_0', origin='fake-id')
+        newmsg = Message(name='completed', target='fake-id',
+                         origin='fake-id_0')
         self.fexpr.state = 'ready'
-        result = self.fexpr.handle_workitem(self.ch, self.wi)
-        self.assertTrue(result == 'consumed')
-        self.assertTrue(self.fexpr.state == 'completed')
-        self.wi.send.assert_called_once_with(self.ch, message='completed',
-                                             target='fake-id',
-                                             origin='fake-id_0')
+        with patch('bureaucrat.flowexpression.Message') as MockMessage:
+            MockMessage.return_value = newmsg
+            result = self.fexpr.handle_workitem(self.ch, msg)
+            self.assertEqual(result, 'consumed')
+            self.assertEqual(self.fexpr.state, 'completed')
+            MockMessage.assert_called_once_with(name='completed',
+                                                target='fake-id',
+                                                origin='fake-id_0')
+            self.ch.send.assert_called_once_with(newmsg)
 
     def test_handle_workitem_completed_last(self):
-        """Test While.handle_workitem() with completed event from last child."""
+        """Test While.handle_workitem() with completed msg from last child."""
 
-        self.wi.message = 'completed'
-        self.wi.target = 'fake-id_0'
-        self.wi.origin = 'fake-id_0_1'
+        msg = Message(name='completed', target='fake-id_0',
+                      origin='fake-id_0_1')
         self.fexpr.state = 'active'
-        result = self.fexpr.handle_workitem(self.ch, self.wi)
-        self.assertTrue(result == 'consumed')
-        self.assertTrue(self.fexpr.state == 'completed')
-        self.wi.send.assert_called_once_with(self.ch, message='completed',
-                                             target='fake-id',
-                                             origin='fake-id_0')
+        newmsg = Message(name='completed', target='fake-id',
+                         origin='fake-id_0')
+        with patch('bureaucrat.flowexpression.Message') as MockMessage:
+            MockMessage.return_value = newmsg
+            result = self.fexpr.handle_workitem(self.ch, msg)
+            self.assertEqual(result, 'consumed')
+            self.assertEqual(self.fexpr.state, 'completed')
+            MockMessage.assert_called_once_with(name='completed',
+                                                target='fake-id',
+                                                origin='fake-id_0')
+            self.ch.send.assert_called_once_with(newmsg)
