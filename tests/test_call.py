@@ -29,35 +29,35 @@ class TestCall(unittest.TestCase):
         self.ch.send = Mock()
 
     # TODO: move these two cases to a base class
-    def test_handle_workitem_completed_state(self):
-        """Test Call.handle_workitem() when While is completed."""
+    def test_handle_message_completed_state(self):
+        """Test Call.handle_message() when While is completed."""
 
         self.fexpr.state = 'completed'
         msg = Message(name='start', target='fake-id_0', origin='fake-id')
-        result = self.fexpr.handle_workitem(self.ch, msg)
+        result = self.fexpr.handle_message(self.ch, msg)
         self.assertEqual(result, 'ignored')
 
-    def test_handle_workitem_wrong_target(self):
-        """Test Call.handle_workitem() when workitem targeted not to it."""
+    def test_handle_message_wrong_target(self):
+        """Test Call.handle_message() when workitem targeted not to it."""
 
         msg = Message(name='start', target='fake-id_10', origin='fake-id')
         self.fexpr.state = 'active'
-        result = self.fexpr.handle_workitem(self.ch, msg)
+        result = self.fexpr.handle_message(self.ch, msg)
         self.assertEqual(result, 'ignored')
 
-    def test_handle_workitem_start(self):
-        """Test Call.handle_workitem() with 'start' message."""
+    def test_handle_message_start(self):
+        """Test Call.handle_message() with 'start' message."""
 
         msg = Message(name='start', target='fake-id_0', origin='fake-id')
         self.fexpr.context.set('some_process_name', subprocessdsc)
         self.fexpr.state = 'ready'
-        result = self.fexpr.handle_workitem(self.ch, msg)
+        result = self.fexpr.handle_message(self.ch, msg)
         self.assertEqual(result, 'consumed')
         self.assertEqual(self.fexpr.state, 'active')
         self.ch._ch.basic_publish.assert_called_once()
 
-    def test_handle_workitem_completed(self):
-        """Test Call.handle_workitem() with 'completed' message."""
+    def test_handle_message_completed(self):
+        """Test Call.handle_message() with 'completed' message."""
 
         msg = Message(name='completed', target='fake-id_0',
                       origin='other-fake-id')
@@ -66,7 +66,7 @@ class TestCall(unittest.TestCase):
                          origin='fake-id_0')
         with patch('bureaucrat.flowexpression.Message') as MockMessage:
             MockMessage.return_value = newmsg
-            result = self.fexpr.handle_workitem(self.ch, msg)
+            result = self.fexpr.handle_message(self.ch, msg)
             self.assertEqual(result, 'consumed')
             self.assertEqual(self.fexpr.state, 'completed')
             MockMessage.assert_called_once_with(name='completed',

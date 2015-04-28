@@ -6,7 +6,7 @@
 
 * 'consumed' and 'ignored' must be symbols, not strings
 
-* The methods handle_workitem() often look similar, consider refactoring
+* The methods handle_message() often look similar, consider refactoring
 
 * Avoid duplicate code in unittests
 

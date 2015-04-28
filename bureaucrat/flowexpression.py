@@ -127,7 +127,7 @@ class FlowExpression(object):
         for child, childstate in zip(self.children, state["children"]):
             child.reset_state(childstate)
 
-    def handle_workitem(self, channel, msg):
+    def handle_message(self, channel, msg):
         """Handle message."""
         raise NotImplementedError()
 
@@ -200,7 +200,7 @@ class FlowExpression(object):
 
         res = False
         for child in self.children:
-            if child.handle_workitem(channel, msg) == 'consumed':
+            if child.handle_message(channel, msg) == 'consumed':
                 res = True
                 break
         return res
@@ -238,7 +238,7 @@ class Process(FlowExpression):
         else:
             raise ProcessError("Unknown element: %s" % element.tag)
 
-    def handle_workitem(self, channel, msg):
+    def handle_message(self, channel, msg):
         """Handle message in process instance."""
         LOG.debug("Handling %r in %r", msg, self)
 
@@ -258,7 +258,7 @@ class Sequence(FlowExpression):
 
     allowed_child_types = _get_supported_flowexpressions()
 
-    def handle_workitem(self, channel, msg):
+    def handle_message(self, channel, msg):
         """Handle message."""
 
         if self._can_be_ignored(msg):
@@ -290,7 +290,7 @@ class Action(FlowExpression):
         """String representation."""
         return "%s-%s" % (self.participant, self.id)
 
-    def handle_workitem(self, channel, msg):
+    def handle_message(self, channel, msg):
         """Handle message."""
 
         if self._can_be_ignored(msg):
@@ -331,7 +331,7 @@ class Delay(FlowExpression):
         """String representation."""
         return "%s[duration=%s]" % (self.id, self.duration)
 
-    def handle_workitem(self, channel, msg):
+    def handle_message(self, channel, msg):
         """Handle msg."""
 
         if self._can_be_ignored(msg):
@@ -397,7 +397,7 @@ class Await(FlowExpression):
 
         return False
 
-    def handle_workitem(self, channel, msg):
+    def handle_message(self, channel, msg):
         """Handle message."""
 
         if self._can_be_ignored(msg):
@@ -462,7 +462,7 @@ class Case(FlowExpression):
 
         return False
 
-    def handle_workitem(self, channel, msg):
+    def handle_message(self, channel, msg):
         """Handle message."""
         LOG.debug("handling %r in %r", msg, self)
 
@@ -488,7 +488,7 @@ class Switch(FlowExpression):
 
     is_ctx_allowed = False
 
-    def handle_workitem(self, channel, msg):
+    def handle_message(self, channel, msg):
         """Handle message."""
 
         LOG.debug("Handling %r in %r", msg, self)
@@ -556,7 +556,7 @@ class While(FlowExpression):
 
         return False
 
-    def handle_workitem(self, channel, msg):
+    def handle_message(self, channel, msg):
         """Handle message."""
 
         if self._can_be_ignored(msg):
@@ -584,7 +584,7 @@ class All(FlowExpression):
 
     allowed_child_types = _get_supported_flowexpressions()
 
-    def handle_workitem(self, channel, msg):
+    def handle_message(self, channel, msg):
         """Handle message."""
 
         if self._can_be_ignored(msg):
@@ -629,7 +629,7 @@ class Call(FlowExpression):
         FlowExpression.__init__(self, parent_id, element, fei, context)
         self.process_name = element.attrib["process"]
 
-    def handle_workitem(self, channel, msg):
+    def handle_message(self, channel, msg):
         """Handle message."""
 
         if self._can_be_ignored(msg):

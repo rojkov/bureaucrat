@@ -23,28 +23,28 @@ class TestAll(unittest.TestCase):
         self.ch = Mock()
         self.ch.send = Mock()
 
-    def test_handle_workitem_completed_state(self):
-        """Test All.handle_workitem() when While is completed."""
+    def test_handle_message_completed_state(self):
+        """Test All.handle_message() when While is completed."""
 
         self.fexpr.state = 'completed'
-        result = self.fexpr.handle_workitem(
+        result = self.fexpr.handle_message(
             self.ch,
             Message(name='fake', target='fake-id_0', origin='fake-id')
         )
         self.assertTrue(result == 'ignored')
 
-    def test_handle_workitem_wrong_target(self):
-        """Test All.handle_workitem() when workitem targeted not to it."""
+    def test_handle_message_wrong_target(self):
+        """Test All.handle_message() when workitem targeted not to it."""
 
         self.fexpr.state = 'active'
-        result = self.fexpr.handle_workitem(
+        result = self.fexpr.handle_message(
             self.ch,
             Message(name='start', target='fake-id_1', origin='fake-id')
         )
         self.assertTrue(result == 'ignored')
 
-    def test_handle_workitem_response(self):
-        """Test All.handle_workitem() with response event."""
+    def test_handle_message_response(self):
+        """Test All.handle_message() with response event."""
 
         msg = Message(name='response', target='fake-id_0_0',
                       origin='fake-id_0_0')
@@ -54,12 +54,12 @@ class TestAll(unittest.TestCase):
         self.fexpr.children[0].state = 'active'
         with patch('bureaucrat.flowexpression.Message') as MockMessage:
             MockMessage.return_value = newmsg
-            result = self.fexpr.handle_workitem(self.ch, msg)
+            result = self.fexpr.handle_message(self.ch, msg)
             self.assertTrue(result == 'consumed')
             self.ch.send.assert_called_once_with(newmsg)
 
-    def test_handle_workitem_start(self):
-        """Test All.handle_workitem() with start event."""
+    def test_handle_message_start(self):
+        """Test All.handle_message() with start event."""
 
         msg = Message(name='start', target='fake-id_0', origin='fake-id')
         self.fexpr.state = 'ready'
@@ -67,7 +67,7 @@ class TestAll(unittest.TestCase):
         msg2 = Message(name='start', target='fake-id_0_1', origin='fake-id_0')
         with patch('bureaucrat.flowexpression.Message') as MockMessage:
             MockMessage.side_effect = [msg1, msg2]
-            result = self.fexpr.handle_workitem(self.ch, msg)
+            result = self.fexpr.handle_message(self.ch, msg)
             self.assertTrue(result == 'consumed')
             self.assertTrue(self.fexpr.state == 'active')
             expected = [
@@ -76,21 +76,21 @@ class TestAll(unittest.TestCase):
             ]
             self.assertEqual(self.ch.send.call_args_list, expected)
 
-    def test_handle_workitem_completed_with_active_child(self):
-        """Test All.handle_workitem() with completed event and active child."""
+    def test_handle_message_completed_with_active_child(self):
+        """Test All.handle_message() with completed event and active child."""
 
         msg = Message(name='completed', target='fake-id_0',
                       origin='fake-id_0_1')
         self.fexpr.state = 'active'
         self.fexpr.children[0].state = 'active'
         self.fexpr.children[1].state = 'completed'
-        result = self.fexpr.handle_workitem(self.ch, msg)
+        result = self.fexpr.handle_message(self.ch, msg)
         self.assertTrue(result == 'consumed')
         self.assertTrue(self.fexpr.state == 'active')
         self.assertTrue(self.ch.send.call_args_list == [])
 
-    def test_handle_workitem_completed_with_completed_children(self):
-        """Test All.handle_workitem() with completed workitem with no active child."""
+    def test_handle_message_completed_with_completed_children(self):
+        """Test All.handle_message() with completed workitem with no active child."""
 
         msg = Message(name='completed', target='fake-id_0',
                       origin='fake-id_0_1')
@@ -101,7 +101,7 @@ class TestAll(unittest.TestCase):
         self.fexpr.children[1].state = 'completed'
         with patch('bureaucrat.flowexpression.Message') as MockMessage:
             MockMessage.return_value = newmsg
-            result = self.fexpr.handle_workitem(self.ch, msg)
+            result = self.fexpr.handle_message(self.ch, msg)
             self.assertTrue(result == 'consumed')
             self.assertTrue(self.fexpr.state == 'completed')
             self.ch.send.assert_called_once_with(newmsg)

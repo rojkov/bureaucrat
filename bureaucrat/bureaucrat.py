@@ -122,7 +122,7 @@ class Bureaucrat(object):
         channel.basic_ack(method.delivery_tag)
 
     @log_trace
-    def handle_workitem(self, channel, method, header, body):
+    def handle_message(self, channel, method, header, body):
         """Handle workitem."""
 
         LOG.debug("Method: %r", method)
@@ -147,7 +147,7 @@ class Bureaucrat(object):
             Workflow.load(msg.origin).delete()
         else:
             wflow = Workflow.load(msg.target_pid)
-            wflow.process.handle_workitem(ChannelWrapper(channel), msg)
+            wflow.process.handle_message(ChannelWrapper(channel), msg)
             wflow.save()
         channel.basic_ack(method.delivery_tag)
 
@@ -207,7 +207,7 @@ class Bureaucrat(object):
                                    exclusive=False, auto_delete=False)
         self.channel.basic_qos(prefetch_count=1)
         self.channel.basic_consume(self.launch_process, queue="bureaucrat")
-        self.channel.basic_consume(self.handle_workitem,
+        self.channel.basic_consume(self.handle_message,
                                    queue=config.message_queue)
         self.channel.basic_consume(self.handle_event,
                                    queue=config.event_queue)

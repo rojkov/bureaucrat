@@ -23,15 +23,15 @@ class TestProcess(unittest.TestCase):
         self.fexpr = Process('', xml_element, 'fake-id', Context())
         self.ch = Mock()
 
-    def test_handle_workitem_start(self):
-        """Test Process.handle_workitem() with start message."""
+    def test_handle_message_start(self):
+        """Test Process.handle_message() with start message."""
 
         msg = Message(name='start', target='fake-id', origin='')
         newmsg = Message(name='start', target='fake-id_0', origin='fake-id')
         self.fexpr.state = 'ready'
         with patch('bureaucrat.flowexpression.Message') as MockMessage:
             MockMessage.return_value = newmsg
-            result = self.fexpr.handle_workitem(self.ch, msg)
+            result = self.fexpr.handle_message(self.ch, msg)
             self.assertEqual(result, 'consumed')
             self.assertEqual(self.fexpr.state, 'active')
             MockMessage.assert_called_once_with(name='start',
@@ -39,15 +39,15 @@ class TestProcess(unittest.TestCase):
                                                 origin='fake-id')
             self.ch.send.assert_called_once_with(newmsg)
 
-    def test_handle_workitem_completed1(self):
-        """Test Process.handle_workitem() with completed msg from first child."""
+    def test_handle_message_completed1(self):
+        """Test Process.handle_message() with completed msg from first child."""
 
         msg = Message(name='completed', target='fake-id', origin='fake-id_0')
         self.fexpr.state = 'active'
         newmsg = Message(name='start', target='fake-id_1', origin='fake-id')
         with patch('bureaucrat.flowexpression.Message') as MockMessage:
             MockMessage.return_value = newmsg
-            result = self.fexpr.handle_workitem(self.ch, msg)
+            result = self.fexpr.handle_message(self.ch, msg)
             self.assertEqual(result, 'consumed')
             self.assertEqual(self.fexpr.state, 'active')
             MockMessage.assert_called_once_with(name='start',
@@ -55,23 +55,23 @@ class TestProcess(unittest.TestCase):
                                                 origin='fake-id')
             self.ch.send.assert_called_once_with(newmsg)
 
-    def test_handle_workitem_completed2(self):
-        """Test Process.handle_workitem() with completed msg from last child."""
+    def test_handle_message_completed2(self):
+        """Test Process.handle_message() with completed msg from last child."""
 
         msg = Message(name='completed', target='fake-id', origin='fake-id_1')
         self.fexpr.state = 'active'
         newmsg = Message(name='completed', target='', origin='fake-id')
         with patch('bureaucrat.flowexpression.Message') as MockMessage:
             MockMessage.return_value = newmsg
-            result = self.fexpr.handle_workitem(self.ch, msg)
+            result = self.fexpr.handle_message(self.ch, msg)
             self.assertEqual(result, 'consumed')
             self.assertEqual(self.fexpr.state, 'completed')
             MockMessage.assert_called_once_with(name='completed', target='',
                                                 origin='fake-id')
             self.ch.send.assert_called_once_with(newmsg)
 
-    def test_handle_workitem_response(self):
-        """Test Process.handle_workitem() with response msg for child."""
+    def test_handle_message_response(self):
+        """Test Process.handle_message() with response msg for child."""
 
         msg = Message(name='response', target='fake-id_0', origin='fake-id_0')
         self.fexpr.state = 'active'
@@ -80,7 +80,7 @@ class TestProcess(unittest.TestCase):
                          origin='fake-id_0')
         with patch('bureaucrat.flowexpression.Message') as MockMessage:
             MockMessage.return_value = newmsg
-            result = self.fexpr.handle_workitem(self.ch, msg)
+            result = self.fexpr.handle_message(self.ch, msg)
             self.assertEqual(result, 'consumed')
             self.assertEqual(self.fexpr.state, 'active')
             MockMessage.assert_called_once_with(name='completed',
