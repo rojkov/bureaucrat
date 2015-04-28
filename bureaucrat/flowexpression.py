@@ -117,7 +117,11 @@ class FlowExpression(object):
         which are just attributes of them, not other flow expression.
         As an example consider <condition> inside <case>.
         """
-        raise FlowExpressionError("'%s' is disallowed child type" % element.tag)
+        if element.tag == 'context' and self.is_ctx_allowed:
+            self.context.parse(element)
+        else:
+            raise FlowExpressionError("'%s' is disallowed child type" % \
+                                      element.tag)
 
     def snapshot(self):
         """Return flow expression snapshot."""
@@ -237,21 +241,10 @@ class FlowExpression(object):
             child.state = 'ready'
             child.reset_children()
 
-class ProcessError(FlowExpressionError):
-    """Process error."""
-
 class Process(FlowExpression):
     """A Process flow expression."""
 
     allowed_child_types = _get_supported_flowexpressions()
-
-    def parse_non_child(self, element):
-        """Parse process's fields."""
-
-        if element.tag == 'context':
-            self.context.parse(element)
-        else:
-            raise ProcessError("Unknown element: %s" % element.tag)
 
     def handle_message(self, channel, msg):
         """Handle message in process instance."""
@@ -395,7 +388,7 @@ class Await(FlowExpression):
             html_parser = HTMLParser()
             self.conditions.append(html_parser.unescape(element.text))
         else:
-            raise CaseError("Unknown element: %s" % element.tag)
+            FlowExpression.parse_non_child(self, element)
 
     def evaluate(self):
         """Check if conditions are met."""
@@ -441,9 +434,6 @@ class Await(FlowExpression):
 
         return result
 
-class CaseError(FlowExpressionError):
-    """Case error."""
-
 class Case(FlowExpression):
     """Case element of switch activity."""
 
@@ -462,7 +452,7 @@ class Case(FlowExpression):
             html_parser = HTMLParser()
             self.conditions.append(html_parser.unescape(element.text))
         else:
-            raise CaseError("Unknown element: %s" % element.tag)
+            FlowExpression.parse_non_child(self, element)
 
     def evaluate(self):
         """Check if conditions are met."""
@@ -533,9 +523,6 @@ class Switch(FlowExpression):
 
         return 'ignored'
 
-class WhileError(FlowExpressionError):
-    """While error."""
-
 class While(FlowExpression):
     """While activity."""
 
@@ -553,10 +540,8 @@ class While(FlowExpression):
         if element.tag == 'condition':
             html_parser = HTMLParser()
             self.conditions.append(html_parser.unescape(element.text))
-        elif element.tag == 'context': # TODO: unify this code with Process and other complex activities
-            self.context.parse(element)
         else:
-            raise WhileError("Unknown element: %s" % element.tag)
+            FlowExpression.parse_non_child(self, element)
 
     def evaluate(self):
         """Check if conditions are met."""

@@ -63,10 +63,14 @@ class Context(object):
     def set(self, key, value):
         """Set value of the property in the current context."""
 
-        if self._parent is not None and key in self._parent._props.keys():
-            self._parent.set(key, value)
-        else:
+        if key in self._props.keys():
             self._props[key] = value
+        else:
+            try:
+                self._parent.get(key)
+                self._parent.set(key, value)
+            except (ContextError, AttributeError):
+                self._props[key] = value
 
     def update(self, props):
         """Update context with the given property values."""
