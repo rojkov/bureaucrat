@@ -73,6 +73,7 @@ class FlowExpression(object):
     states = ('ready', 'active', 'completed')
     allowed_child_types = ()
     is_ctx_allowed = True # TODO: refactor to introduce simple and complex activities
+    is_cond_allowed = False
 
     def __init__(self, parent_id, element, fei, context):
         """Constructor."""
@@ -99,7 +100,7 @@ class FlowExpression(object):
                 self.children.append(fexpr)
                 el_index = el_index + 1
             else:
-                self.parse_non_child(child)
+                self._parse_non_child(child)
 
     def __str__(self):
         """String representation."""
@@ -110,7 +111,7 @@ class FlowExpression(object):
         return "<%s[%s, state='%s']>" % (self.__class__.__name__, self,
                                          self.state)
 
-    def parse_non_child(self, element):
+    def _parse_non_child(self, element):
         """Parse disallowed child element.
 
         Some flow expressions can contain child elements in their definition
@@ -119,6 +120,9 @@ class FlowExpression(object):
         """
         if element.tag == 'context' and self.is_ctx_allowed:
             self.context.parse(element)
+        elif element.tag == 'condition' and self.is_cond_allowed:
+            html_parser = HTMLParser()
+            self.conditions.append(html_parser.unescape(element.text))
         else:
             raise FlowExpressionError("'%s' is disallowed child type" % \
                                       element.tag)
@@ -369,6 +373,7 @@ class Await(FlowExpression):
     """A await activity."""
 
     is_ctx_allowed = False
+    is_cond_allowed = True
 
     def __init__(self, parent_id, element, fei, context):
         """Constructor."""
@@ -380,15 +385,6 @@ class Await(FlowExpression):
     def __str__(self):
         """String representation."""
         return "%s[event=%s]" % (self.id, self.event)
-
-    def parse_non_child(self, element):
-        """Parse case's conditions."""
-
-        if element.tag == 'condition':
-            html_parser = HTMLParser()
-            self.conditions.append(html_parser.unescape(element.text))
-        else:
-            FlowExpression.parse_non_child(self, element)
 
     def evaluate(self):
         """Check if conditions are met."""
@@ -438,21 +434,13 @@ class Case(FlowExpression):
     """Case element of switch activity."""
 
     allowed_child_types = _get_supported_flowexpressions()
+    is_cond_allowed = True
 
     def __init__(self, parent_id, element, fei, context):
         """Constructor."""
 
         self.conditions = []
         FlowExpression.__init__(self, parent_id, element, fei, context)
-
-    def parse_non_child(self, element):
-        """Parse case's conditions."""
-
-        if element.tag == 'condition':
-            html_parser = HTMLParser()
-            self.conditions.append(html_parser.unescape(element.text))
-        else:
-            FlowExpression.parse_non_child(self, element)
 
     def evaluate(self):
         """Check if conditions are met."""
@@ -527,21 +515,13 @@ class While(FlowExpression):
     """While activity."""
 
     allowed_child_types = _get_supported_flowexpressions()
+    is_cond_allowed = True
 
     def __init__(self, parent_id, element, fei, context):
         """Constructor."""
 
         self.conditions = []
         FlowExpression.__init__(self, parent_id, element, fei, context)
-
-    def parse_non_child(self, element):
-        """Parse case's conditions."""
-
-        if element.tag == 'condition':
-            html_parser = HTMLParser()
-            self.conditions.append(html_parser.unescape(element.text))
-        else:
-            FlowExpression.parse_non_child(self, element)
 
     def evaluate(self):
         """Check if conditions are met."""
