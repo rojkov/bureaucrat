@@ -155,17 +155,17 @@ class FlowExpression(object):
     def _can_be_ignored(self, msg):
         """Check if message can be safely ignored."""
 
-        can_be_ignored = False
+        result = ''
 
         if self.state == 'completed':
             LOG.debug("%r is done already, %r is ignored", self, msg)
-            can_be_ignored = True
+            result = 'ignored'
         elif msg.target is not None and \
                 not msg.target.startswith(self.id):
             LOG.debug("%r is not for %r", msg, self)
-            can_be_ignored = True
+            result = 'ignored'
 
-        return can_be_ignored
+        return result
 
     def _was_activated(self, channel, msg, guard=lambda: True):
         """Check if it's activation message."""
@@ -177,7 +177,7 @@ class FlowExpression(object):
                 self.state = 'completed'
                 channel.send(Message(name='completed', origin=self.id,
                                      target=self.parent_id))
-                return True
+                return 'consumed'
 
             if len(self.children) > 0:
                 self.state = 'active'
@@ -187,15 +187,15 @@ class FlowExpression(object):
                 self.state = 'completed'
                 channel.send(Message(name='completed', origin=self.id,
                                      target=self.parent_id))
-            return True
+            return 'consumed'
         else:
-            return False
+            return ''
 
     def _was_sequence_completed(self, channel, msg, guard=lambda: True,
                                 compensate=lambda: None):
         """Check if all children in sequence were completed."""
 
-        res = False
+        res = ''
         if self._is_complete_message(msg):
             for index, child in zip(range(0, len(self.children)),
                                     self.children):
@@ -212,17 +212,17 @@ class FlowExpression(object):
                                                  target=self.parent_id))
                         else:
                             compensate()
-                    res = True
+                    res = 'consumed'
                     break
         return res
 
     def _was_consumed_by_child(self, channel, msg):
         """Check if a child consumed the message."""
 
-        res = False
+        res = ''
         for child in self.children:
             if child.handle_message(channel, msg) == 'consumed':
-                res = True
+                res = 'consumed'
                 break
         return res
 
@@ -252,14 +252,12 @@ class Process(FlowExpression):
         """Handle message in process instance."""
         LOG.debug("Handling %r in %r", msg, self)
 
-        if self._was_activated(channel, msg):
-            return 'consumed'
-
-        if self._was_sequence_completed(channel, msg):
-            return 'consumed'
-
-        if self._was_consumed_by_child(channel, msg):
-            return 'consumed'
+        res = self._can_be_ignored(msg) or \
+                self._was_activated(channel, msg) or \
+                self._was_sequence_completed(channel, msg) or \
+                self._was_consumed_by_child(channel, msg)
+        if res:
+            return res
 
         return 'ignored'
 
@@ -271,17 +269,12 @@ class Sequence(FlowExpression):
     def handle_message(self, channel, msg):
         """Handle message."""
 
-        if self._can_be_ignored(msg):
-            return 'ignored'
-
-        if self._was_activated(channel, msg):
-            return 'consumed'
-
-        if self._was_sequence_completed(channel, msg):
-            return 'consumed'
-
-        if self._was_consumed_by_child(channel, msg):
-            return 'consumed'
+        res = self._can_be_ignored(msg) or \
+                self._was_activated(channel, msg) or \
+                self._was_sequence_completed(channel, msg) or \
+                self._was_consumed_by_child(channel, msg)
+        if res:
+            return res
 
         return 'ignored'
 
@@ -303,8 +296,9 @@ class Action(FlowExpression):
     def handle_message(self, channel, msg):
         """Handle message."""
 
-        if self._can_be_ignored(msg):
-            return 'ignored'
+        res = self._can_be_ignored(msg)
+        if res:
+            return res
 
         result = 'ignore'
         if self._is_start_message(msg):
@@ -344,8 +338,9 @@ class Delay(FlowExpression):
     def handle_message(self, channel, msg):
         """Handle msg."""
 
-        if self._can_be_ignored(msg):
-            return 'ignored'
+        res = self._can_be_ignored(msg)
+        if res:
+            return res
 
         result = 'ignore'
         if self._is_start_message(msg):
@@ -402,8 +397,9 @@ class Await(FlowExpression):
     def handle_message(self, channel, msg):
         """Handle message."""
 
-        if self._can_be_ignored(msg):
-            return 'ignored'
+        res = self._can_be_ignored(msg)
+        if res:
+            return res
 
         result = 'ignore'
         if self._is_start_message(msg):
@@ -456,19 +452,13 @@ class Case(FlowExpression):
         """Handle message."""
         LOG.debug("handling %r in %r", msg, self)
 
-        if self._can_be_ignored(msg):
-            return 'ignored'
+        res = self._can_be_ignored(msg) or \
+                self._was_activated(channel, msg) or \
+                self._was_sequence_completed(channel, msg) or \
+                self._was_consumed_by_child(channel, msg)
+        if res:
+            return res
 
-        if self._was_activated(channel, msg):
-            return 'consumed'
-
-        if self._was_sequence_completed(channel, msg):
-            return 'consumed'
-
-        if self._was_consumed_by_child(channel, msg):
-            return 'consumed'
-
-        LOG.debug("%r was ignored in %r", msg, self)
         return 'ignored'
 
 class Switch(FlowExpression):
@@ -482,8 +472,9 @@ class Switch(FlowExpression):
         """Handle message."""
 
         LOG.debug("Handling %r in %r", msg, self)
-        if self._can_be_ignored(msg):
-            return 'ignored'
+        res = self._can_be_ignored(msg)
+        if res:
+            return res
 
         if self._is_start_message(msg):
             for case in self.children:
@@ -536,23 +527,19 @@ class While(FlowExpression):
     def handle_message(self, channel, msg):
         """Handle message."""
 
-        if self._can_be_ignored(msg):
-            return 'ignored'
-
-        if self._was_activated(channel, msg, self.evaluate):
-            return 'consumed'
-
         def restart():
             self.reset_children()
             channel.send(Message(name='start', target=self.children[0].id,
                                  origin=self.id))
 
-        if self._was_sequence_completed(channel, msg,
-                                        lambda: not self.evaluate(), restart):
-            return 'consumed'
-
-        if self._was_consumed_by_child(channel, msg):
-            return 'consumed'
+        res = self._can_be_ignored(msg) or \
+                self._was_activated(channel, msg, self.evaluate) or \
+                self._was_sequence_completed(channel, msg,
+                                             lambda: not self.evaluate(),
+                                             restart) or \
+                self._was_consumed_by_child(channel, msg)
+        if res:
+            return res
 
         return 'ignored'
 
@@ -564,8 +551,9 @@ class All(FlowExpression):
     def handle_message(self, channel, msg):
         """Handle message."""
 
-        if self._can_be_ignored(msg):
-            return 'ignored'
+        res = self._can_be_ignored(msg)
+        if res:
+            return res
 
         if self._is_start_message(msg):
             if len(self.children) > 0:
@@ -609,8 +597,9 @@ class Call(FlowExpression):
     def handle_message(self, channel, msg):
         """Handle message."""
 
-        if self._can_be_ignored(msg):
-            return 'ignored'
+        res = self._can_be_ignored(msg)
+        if res:
+            return res
 
         result = 'consumed'
         if self._is_start_message(msg):
