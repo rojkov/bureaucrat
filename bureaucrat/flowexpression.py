@@ -15,12 +15,11 @@ from bureaucrat.storage import lock_storage
 LOG = logging.getLogger(__name__)
 
 
-def _get_supported_flowexpressions():
-    """Return list of supported types of flow expressions."""
+def _get_supported_activities():
+    """Return list of supported types of activities."""
     # TODO: calculate supported activities dynamically and cache
     return ('action', 'sequence', 'switch', 'while', 'all', 'call', 'delay',
             'await')
-
 
 def _create_fe_from_element(parent_id, element, fei, context):
     """Create a flow expression instance from ElementTree.Element."""
@@ -70,7 +69,6 @@ class FlowExpressionError(Exception):
 class FlowExpression(object):
     """Flow expression."""
 
-    states = ('ready', 'active', 'completed')
     allowed_child_types = ()
     is_ctx_allowed = True # TODO: refactor to introduce simple and complex activities
     is_cond_allowed = False
@@ -248,7 +246,7 @@ class FlowExpression(object):
 class Process(FlowExpression):
     """A Process flow expression."""
 
-    allowed_child_types = _get_supported_flowexpressions()
+    allowed_child_types = _get_supported_activities()
 
     def handle_message(self, channel, msg):
         """Handle message in process instance."""
@@ -268,7 +266,7 @@ class Process(FlowExpression):
 class Sequence(FlowExpression):
     """A sequence activity."""
 
-    allowed_child_types = _get_supported_flowexpressions()
+    allowed_child_types = _get_supported_activities()
 
     def handle_message(self, channel, msg):
         """Handle message."""
@@ -433,7 +431,7 @@ class Await(FlowExpression):
 class Case(FlowExpression):
     """Case element of switch activity."""
 
-    allowed_child_types = _get_supported_flowexpressions()
+    allowed_child_types = _get_supported_activities()
     is_cond_allowed = True
 
     def __init__(self, parent_id, element, fei, context):
@@ -514,7 +512,7 @@ class Switch(FlowExpression):
 class While(FlowExpression):
     """While activity."""
 
-    allowed_child_types = _get_supported_flowexpressions()
+    allowed_child_types = _get_supported_activities()
     is_cond_allowed = True
 
     def __init__(self, parent_id, element, fei, context):
@@ -561,7 +559,7 @@ class While(FlowExpression):
 class All(FlowExpression):
     """All activity."""
 
-    allowed_child_types = _get_supported_flowexpressions()
+    allowed_child_types = _get_supported_activities()
 
     def handle_message(self, channel, msg):
         """Handle message."""
