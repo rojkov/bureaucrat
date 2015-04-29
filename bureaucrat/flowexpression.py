@@ -149,11 +149,10 @@ class FlowExpression(object):
             child.reset_state(childstate)
 
     def handle_message(self, channel, msg):
-        """Handle message."""
-        raise NotImplementedError()
+        """Handle message.
 
-    def _can_be_ignored(self, msg):
-        """Check if message can be safely ignored."""
+        This is common code used by all derived classes.
+        """
 
         result = ''
 
@@ -252,7 +251,7 @@ class Process(FlowExpression):
         """Handle message in process instance."""
         LOG.debug("Handling %r in %r", msg, self)
 
-        res = self._can_be_ignored(msg) or \
+        res = FlowExpression.handle_message(self, channel, msg) or \
                 self._was_activated(channel, msg) or \
                 self._was_sequence_completed(channel, msg) or \
                 self._was_consumed_by_child(channel, msg)
@@ -269,7 +268,7 @@ class Sequence(FlowExpression):
     def handle_message(self, channel, msg):
         """Handle message."""
 
-        res = self._can_be_ignored(msg) or \
+        res = FlowExpression.handle_message(self, channel, msg) or \
                 self._was_activated(channel, msg) or \
                 self._was_sequence_completed(channel, msg) or \
                 self._was_consumed_by_child(channel, msg)
@@ -296,7 +295,7 @@ class Action(FlowExpression):
     def handle_message(self, channel, msg):
         """Handle message."""
 
-        res = self._can_be_ignored(msg)
+        res = FlowExpression.handle_message(self, channel, msg)
         if res:
             return res
 
@@ -338,7 +337,7 @@ class Delay(FlowExpression):
     def handle_message(self, channel, msg):
         """Handle msg."""
 
-        res = self._can_be_ignored(msg)
+        res = FlowExpression.handle_message(self, channel, msg)
         if res:
             return res
 
@@ -397,7 +396,7 @@ class Await(FlowExpression):
     def handle_message(self, channel, msg):
         """Handle message."""
 
-        res = self._can_be_ignored(msg)
+        res = FlowExpression.handle_message(self, channel, msg)
         if res:
             return res
 
@@ -452,7 +451,7 @@ class Case(FlowExpression):
         """Handle message."""
         LOG.debug("handling %r in %r", msg, self)
 
-        res = self._can_be_ignored(msg) or \
+        res = FlowExpression.handle_message(self, channel, msg) or \
                 self._was_activated(channel, msg) or \
                 self._was_sequence_completed(channel, msg) or \
                 self._was_consumed_by_child(channel, msg)
@@ -472,7 +471,7 @@ class Switch(FlowExpression):
         """Handle message."""
 
         LOG.debug("Handling %r in %r", msg, self)
-        res = self._can_be_ignored(msg)
+        res = FlowExpression.handle_message(self, channel, msg)
         if res:
             return res
 
@@ -532,7 +531,7 @@ class While(FlowExpression):
             channel.send(Message(name='start', target=self.children[0].id,
                                  origin=self.id))
 
-        res = self._can_be_ignored(msg) or \
+        res = FlowExpression.handle_message(self, channel, msg) or \
                 self._was_activated(channel, msg, self.evaluate) or \
                 self._was_sequence_completed(channel, msg,
                                              lambda: not self.evaluate(),
@@ -551,7 +550,7 @@ class All(FlowExpression):
     def handle_message(self, channel, msg):
         """Handle message."""
 
-        res = self._can_be_ignored(msg)
+        res = FlowExpression.handle_message(self, channel, msg)
         if res:
             return res
 
@@ -597,7 +596,7 @@ class Call(FlowExpression):
     def handle_message(self, channel, msg):
         """Handle message."""
 
-        res = self._can_be_ignored(msg)
+        res = FlowExpression.handle_message(self, channel, msg)
         if res:
             return res
 
