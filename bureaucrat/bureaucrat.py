@@ -136,14 +136,18 @@ class Bureaucrat(object):
             channel.basic_ack(method.delivery_tag)
             return
 
-        if msg.target == '' and msg.name == 'completed':
-            LOG.debug("The process %s has finished", msg.origin)
-            # TODO: delete subprocesses too
-            Workflow.load(msg.origin).delete()
-        else:
+        if msg.target != '':
             wflow = Workflow.load(msg.target_pid)
             wflow.process.handle_message(ChannelWrapper(channel), msg)
             wflow.save()
+
+        if msg.origin == msg.origin_pid and msg.name == 'completed':
+            LOG.debug("The process %s has finished", msg.origin)
+            Workflow.load(msg.origin).delete()
+        elif msg.origin == msg.origin_pid and msg.name == 'fault':
+            LOG.error("The process %s has faulted with %s. " + \
+                      "The state is preserved.", msg.origin, msg.payload)
+
         channel.basic_ack(method.delivery_tag)
 
     @log_trace

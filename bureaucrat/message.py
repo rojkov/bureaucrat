@@ -62,6 +62,11 @@ class Message(object):
         return self._origin
 
     @property
+    def origin_pid(self):
+        """Return origin process ID."""
+        return self._origin.split('_', 1)[0]
+
+    @property
     def payload(self):
         """Return payload."""
         return self._payload

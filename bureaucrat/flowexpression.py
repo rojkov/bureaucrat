@@ -14,6 +14,9 @@ from bureaucrat.storage import lock_storage
 
 LOG = logging.getLogger(__name__)
 
+def is_state_final(state):
+    """Check if state is final."""
+    return state in ('completed', 'aborted', 'canceled')
 
 def _get_supported_activities():
     """Return list of supported types of activities."""
@@ -163,6 +166,77 @@ class FlowExpression(object):
                 not msg.target.startswith(self.id):
             LOG.debug("%r is not for %r", msg, self)
             result = 'ignored'
+        elif self.is_ctx_allowed and self.state == 'active' and \
+                msg.name == 'fault' and msg.target == self.id:
+            self.state = 'aborting'
+            self.context.set('inst:fault', msg.payload)
+            all_in_final_state = True
+            for child in self.children:
+                if not is_state_final(child.state):
+                    all_in_final_state = False
+                    channel.send(Message(name='terminate', target=child.id,
+                                         origin=self.id))
+            if all_in_final_state:
+                self.state = 'aborted'
+                channel.send(Message(name='fault', target=self.parent_id,
+                                     origin=self.id, payload=msg.payload))
+            result = 'consumed'
+        elif self.is_ctx_allowed and self.state == 'active' and \
+                msg.name == 'terminate' and msg.target == self.id:
+            self.state = 'aborting'
+            for child in self.children:
+                if not is_state_final(child.state):
+                    channel.send(Message(name='terminate', target=child.id,
+                                         origin=self.id))
+            result = 'consumed'
+        elif self.is_ctx_allowed and self.state == 'ready' and \
+                msg.name == 'terminate' and msg.target == self.id:
+            self.state = 'canceling'
+            for child in self.children:
+                if not is_state_final(child.state):
+                    channel.send(Message(name='terminate', target=child.id,
+                                         origin=self.id))
+            result = 'consumed'
+        elif self.is_ctx_allowed and self.state == 'aborting' and \
+                (msg.name == 'canceled' or msg.name == 'aborted' or \
+                 msg.name == 'completed') and \
+                msg.target == self.id:
+            if sum([int(is_state_final(child.state))
+                    for child in self.children]) == len(self.children):
+                # all children are in a final state
+                self.state = 'aborted'
+                channel.send(Message(name='fault', target=self.parent_id,
+                                     origin=self.id,
+                                     payload=self.context.get('inst:fault')))
+            result = 'consumed'
+        elif self.is_ctx_allowed and self.state == 'canceling' and \
+                (msg.name == 'canceled' or msg.name == 'aborted' or \
+                 msg.name == 'completed') and msg.target == self.id:
+            if sum([int(is_state_final(child.state))
+                    for child in self.children]) == len(self.children):
+                # all children are in a final state
+                channel.send(Message(name='canceled', target=self.parent_id,
+                                     origin=self.id))
+                self.state = 'canceled'
+            result = 'consumed'
+        elif not self.is_ctx_allowed and self.state == 'active' and \
+                msg.name == 'terminate' and msg.target == self.id:
+            self.state = 'aborted'
+            channel.send(Message(name='aborted', target=self.parent_id,
+                                 origin=self.id))
+            result = 'consumed'
+        elif not self.is_ctx_allowed and self.state == 'ready' and \
+                msg.name == 'terminate' and msg.target == self.id:
+            self.state = 'canceled'
+            channel.send(Message(name='canceled', target=self.parent_id,
+                                 origin=self.id))
+            result = 'consumed'
+        elif not self.is_ctx_allowed and self.state == 'aborting' and \
+                msg.name == 'terminate' and msg.target == self.id:
+            self.state = 'aborted'
+            channel.send(Message(name='aborted', target=self.parent_id,
+                                 origin=self.id))
+            result = 'consumed'
 
         return result
 
@@ -307,12 +381,23 @@ class Action(FlowExpression):
                               self.context.as_dictionary())
             result = 'consumed'
         elif self.state == 'active' and msg.name == 'response':
-            LOG.debug("Got response for action %s. Payload: %s", self.id, msg.payload)
-            self.context.update(msg.payload)
-            self.state = 'completed'
-            # reply to parent that the child is done
-            channel.send(Message(name='completed', origin=self.id,
-                                 target=self.parent_id))
+            LOG.debug("Got response for action %s. Payload: %s",
+                      self.id, msg.payload)
+            if 'error' in msg.payload:
+                LOG.debug("Got error: %s. Aborting...", msg.payload["error"])
+                self.state = 'aborting'
+                payload = {
+                    "code": "ActionError",
+                    "error": msg.payload["error"]
+                }
+                channel.send(Message(name='fault', origin=self.id,
+                                     target=self.parent_id, payload=payload))
+            else:
+                self.context.update(msg.payload)
+                self.state = 'completed'
+                # reply to parent that the child is done
+                channel.send(Message(name='completed', origin=self.id,
+                                     target=self.parent_id))
             result = 'consumed'
         else:
             LOG.debug("%r ignores %r", self, msg)
