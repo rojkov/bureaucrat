@@ -63,5 +63,7 @@ class TestSchedule(unittest.TestCase):
             newmsg = Message(name='timeout', target='fake-id', origin='')
             MockMessage.return_value = newmsg
             self.schedule.handle_alarm()
+            MockMessage.assert_called_once_with(name='timeout',
+                                                target='fake-id', origin='')
             self.schedule.channel.send.assert_called_once_with(newmsg)
             self.assertFalse(storage.exists("schedule", str(instant)))

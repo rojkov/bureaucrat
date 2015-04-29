@@ -56,6 +56,9 @@ class TestAll(unittest.TestCase):
             MockMessage.return_value = newmsg
             result = self.fexpr.handle_message(self.ch, msg)
             self.assertTrue(result == 'consumed')
+            MockMessage.assert_called_once_with(name='completed',
+                                                target='fake-id_0',
+                                                origin='fake-id_0_0')
             self.ch.send.assert_called_once_with(newmsg)
 
     def test_handle_message_start(self):
@@ -104,4 +107,7 @@ class TestAll(unittest.TestCase):
             result = self.fexpr.handle_message(self.ch, msg)
             self.assertTrue(result == 'consumed')
             self.assertTrue(self.fexpr.state == 'completed')
+            MockMessage.assert_called_once_with(name='completed',
+                                                target='fake-id',
+                                                origin='fake-id_0')
             self.ch.send.assert_called_once_with(newmsg)

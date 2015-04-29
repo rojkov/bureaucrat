@@ -90,4 +90,7 @@ class TestAwait(unittest.TestCase):
             result = self.fexpr.handle_message(self.ch, msg)
             self.assertEqual(result, 'consumed')
             self.assertEqual(self.fexpr.state, 'completed')
+            MockMessage.assert_called_once_with(name='completed',
+                                                target='fake-id',
+                                                origin='fake-id_0')
             self.ch.send.assert_called_once_with(newmsg)
