@@ -5,10 +5,12 @@ import json
 
 LOG = logging.getLogger(__name__)
 
+_RESERVED_KEYWORDS = ('inst:fault', )
+
 class ContextError(Exception):
     """Context error."""
 
-#TODO: consider merging with FlowExpression (localprops smell like private to FlowExpression)
+# TODO: consider merging with FlowExpression (localprops smell like private to FlowExpression)
 class Context(object):
     """Represents execution context."""
 
@@ -63,20 +65,33 @@ class Context(object):
     def set(self, key, value):
         """Set value of the property in the current context."""
 
+        if key in _RESERVED_KEYWORDS:
+            raise ContextError("'%s' is a reserved keyword" % key)
+
         if key in self._props.keys():
             self._props[key] = value
         else:
             try:
                 self._parent.get(key)
-                self._parent.set(key, value)
             except (ContextError, AttributeError):
                 self._props[key] = value
+            else:
+                self._parent.set(key, value)
+
+    def throw(self, code="GenericError", message=""):
+        """Throw a fault into the current context."""
+
+        self._props['inst:fault'] = {
+            "code": code,
+            "message": message
+        }
 
     def update(self, props):
         """Update context with the given property values."""
 
         for key, value in props.items():
-            self.set(key, value)
+            if key not in _RESERVED_KEYWORDS:
+                self.set(key, value)
 
     def as_dictionary(self):
         """Return current context as dictionary."""

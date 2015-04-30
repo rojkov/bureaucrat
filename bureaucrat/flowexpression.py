@@ -169,7 +169,8 @@ class FlowExpression(object):
         elif self.is_ctx_allowed and self.state == 'active' and \
                 msg.name == 'fault' and msg.target == self.id:
             self.state = 'aborting'
-            self.context.set('inst:fault', msg.payload)
+            self.context.throw(code=msg.payload.get('code', 'GenericError'),
+                               message=msg.payload.get('message', ''))
             all_in_final_state = True
             for child in self.children:
                 if not is_state_final(child.state):

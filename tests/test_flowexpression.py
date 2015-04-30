@@ -148,7 +148,10 @@ class TestFlowExpression(unittest.TestCase):
             self.assertEqual(self.ch.send.call_args_list, expected)
 
             self.assertEqual(self.root.context.get('inst:fault'),
-                             {'code': 'GenericError'})
+                             {
+                                 'code': 'GenericError',
+                                 'message': ''
+                             })
 
     def test_handle_message_canceled_received(self):
         """Test FlowExpression.handle_message() with single canceled message.
@@ -191,7 +194,7 @@ class TestFlowExpression(unittest.TestCase):
         self.root.children[1].state = 'canceled'
         self.root.children[2].state = 'aborted'
         self.root.children[3].state = 'canceled'
-        self.root.context.set('inst:fault', {'code': 'GenericError'})
+        self.root.context.throw()
         with patch('bureaucrat.flowexpression.Message') as MockMsg:
             newmsg = Message(name='fault', target='', origin='fake-id')
             MockMsg.return_value = newmsg
@@ -199,7 +202,10 @@ class TestFlowExpression(unittest.TestCase):
             self.assertEqual(result, 'consumed')
             MockMsg.assert_called_once_with(name='fault', target='',
                                             origin='fake-id',
-                                            payload={'code': 'GenericError'})
+                                            payload={
+                                                'code': 'GenericError',
+                                                'message': ''
+                                            })
             self.ch.send.assert_called_once_with(newmsg)
             self.assertEqual(self.root.state, 'aborted')
 

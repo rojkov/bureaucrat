@@ -70,6 +70,8 @@ class TestContext(unittest.TestCase):
         self.assertEqual(self.procexpr.context.get('prop1'), 5)
         with self.assertRaises(ContextError):
             self.allexpr.context.get('fakeprop')
+        with self.assertRaises(ContextError):
+            self.allexpr.context.set('inst:fault', "some text")
 
     def test_update(self):
         """Test Context.update()."""
