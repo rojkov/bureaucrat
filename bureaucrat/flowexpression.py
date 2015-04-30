@@ -292,12 +292,9 @@ class FlowExpression(object):
     def _was_consumed_by_child(self, channel, msg):
         """Check if a child consumed the message."""
 
-        res = ''
         for child in self.children:
-            if child.handle_message(channel, msg) == 'consumed':
-                res = 'consumed'
-                break
-        return res
+            if msg.target.startswith(child.id):
+                return child.handle_message(channel, msg)
 
     def _is_start_message(self, msg):
         """Return True if the message destined to start the activity."""
