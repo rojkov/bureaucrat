@@ -148,7 +148,7 @@ class FlowExpression(object):
         if self.is_ctx_allowed:
             snapshot["context"] = self.context.localprops
             if self.faults:
-                snapshot["faults"] = self.faults.sanpshot()
+                snapshot["faults"] = self.faults.snapshot()
         return snapshot
 
     def reset_state(self, state):
@@ -160,7 +160,7 @@ class FlowExpression(object):
         if self.is_ctx_allowed:
             self.context.localprops = state["context"]
             if self.faults:
-                self.reset_state(state["faults"])
+                self.faults.reset_state(state["faults"])
         for child, childstate in zip(self.children, state["children"]):
             child.reset_state(childstate)
 
@@ -212,7 +212,8 @@ class FlowExpression(object):
                     channel.send(Message(name='terminate', target=child.id,
                                          origin=self.id))
             result = 'consumed'
-        elif self.is_ctx_allowed and self.state == 'aborting' and \
+        elif (self.is_ctx_allowed or self.is_handler) and \
+                self.state == 'aborting' and \
                 (msg.name == 'canceled' or msg.name == 'aborted' or \
                  msg.name == 'completed') and \
                 msg.target == self.id:
@@ -402,6 +403,7 @@ class Faults(FlowExpression):
         if res:
             return res
 
+        # TODO: check why there is double 'start' message
         res = ''
         if self._is_start_message(msg):
             code = self.context.get('inst:fault')["code"]
@@ -424,6 +426,14 @@ class Faults(FlowExpression):
                 else:
                     pass
                     # TODO: throw fault again for the last time
+        if res:
+            return res
+
+        if self._is_complete_message(msg):
+            channel.send(Message(name='completed', target=self.parent_id,
+                                 origin=self.id))
+            self.state = 'completed'
+            res = 'consumed'
         if res:
             return res
 
