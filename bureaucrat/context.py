@@ -7,8 +7,10 @@ LOG = logging.getLogger(__name__)
 
 _RESERVED_KEYWORDS = ('inst:fault', )
 
+
 class ContextError(Exception):
     """Context error."""
+
 
 # TODO: consider merging with FlowExpression (localprops smell like private to FlowExpression)
 class Context(object):
@@ -19,6 +21,7 @@ class Context(object):
 
         self._parent = parent
         self._props = {}
+        self.faults = []
 
     def parse(self, element):
         """Parse context XML element.

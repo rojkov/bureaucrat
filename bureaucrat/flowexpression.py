@@ -35,6 +35,8 @@ def _create_fe_from_element(parent_id, element, fei, context):
         expr = Sequence(parent_id, element, fei, context)
     elif tag == 'switch':
         expr = Switch(parent_id, element, fei, context)
+    elif (tag == 'case' or tag == 'default') and parent_id.endswith("faults"):
+        expr = FaultCase(parent_id, element, fei, context)
     elif tag == 'case':
         expr = Case(parent_id, element, fei, context)
     elif tag == 'while':
@@ -75,18 +77,19 @@ class FlowExpression(object):
     allowed_child_types = ()
     is_ctx_allowed = True # TODO: refactor to introduce simple and complex activities
     is_cond_allowed = False
+    is_handler = False
 
     def __init__(self, parent_id, element, fei, context):
         """Constructor."""
 
         self.fe_name = self.__class__.__name__.lower()
-        assert element.tag == self.fe_name
         LOG.debug("Creating %s", self.fe_name)
 
         self.state = 'ready'
         self.id = fei
         self.parent_id = parent_id
         self.children = []
+        self.faults = None
         if self.is_ctx_allowed:
             self.context = Context(context)
         else:
@@ -121,6 +124,12 @@ class FlowExpression(object):
         """
         if element.tag == 'context' and self.is_ctx_allowed:
             self.context.parse(element)
+            for child in element:
+                if child.tag == 'faults':
+                    self.faults = Faults(self.id, child, "%s_faults" % self.id,
+                                         self.context)
+                    break
+
         elif element.tag == 'condition' and self.is_cond_allowed:
             html_parser = HTMLParser()
             self.conditions.append(html_parser.unescape(element.text))
@@ -138,6 +147,8 @@ class FlowExpression(object):
         }
         if self.is_ctx_allowed:
             snapshot["context"] = self.context.localprops
+            if self.faults:
+                snapshot["faults"] = self.faults.sanpshot()
         return snapshot
 
     def reset_state(self, state):
@@ -148,6 +159,8 @@ class FlowExpression(object):
         self.state = state["state"]
         if self.is_ctx_allowed:
             self.context.localprops = state["context"]
+            if self.faults:
+                self.reset_state(state["faults"])
         for child, childstate in zip(self.children, state["children"]):
             child.reset_state(childstate)
 
@@ -166,7 +179,8 @@ class FlowExpression(object):
                 not msg.target.startswith(self.id):
             LOG.debug("%r is not for %r", msg, self)
             result = 'ignored'
-        elif self.is_ctx_allowed and self.state == 'active' and \
+        elif (self.is_ctx_allowed or self.is_handler) and \
+                self.state == 'active' and \
                 msg.name == 'fault' and msg.target == self.id:
             self.state = 'aborting'
             self.context.throw(code=msg.payload.get('code', 'GenericError'),
@@ -202,13 +216,29 @@ class FlowExpression(object):
                 (msg.name == 'canceled' or msg.name == 'aborted' or \
                  msg.name == 'completed') and \
                 msg.target == self.id:
-            if sum([int(is_state_final(child.state))
+            if msg.name == 'completed' and msg.origin.endswith("faults"):
+                self.state = 'completed'
+                del self.context._props['inst:fault']
+                channel.send(Message(name='completed', target=self.parent_id,
+                                     origin=self.id))
+            elif sum([int(is_state_final(child.state))
                     for child in self.children]) == len(self.children):
                 # all children are in a final state
-                self.state = 'aborted'
-                channel.send(Message(name='fault', target=self.parent_id,
-                                     origin=self.id,
-                                     payload=self.context.get('inst:fault')))
+                if self.faults and self.faults.state == 'ready':
+                    channel.send(Message(name='start', target=self.faults.id,
+                                         origin=self.id))
+                else:
+                    self.state = 'aborted'
+                    channel.send(Message(name='fault', target=self.parent_id,
+                                         origin=self.id,
+                                         payload=self.context.get('inst:fault')))
+            result = 'consumed'
+        elif self.is_ctx_allowed and self.state == 'aborting' and \
+                msg.name == 'fault' and msg.target == self.id:
+            self.state = 'aborted'
+            channel.send(Message(name='fault', target=self.parent_id,
+                                 origin=self.id,
+                                 payload=self.context.get('inst:fault')))
             result = 'consumed'
         elif self.is_ctx_allowed and self.state == 'canceling' and \
                 (msg.name == 'canceled' or msg.name == 'aborted' or \
@@ -297,6 +327,10 @@ class FlowExpression(object):
             if msg.target.startswith(child.id):
                 return child.handle_message(channel, msg)
 
+        if self.state == 'aborting' and self.faults and \
+           msg.target.startswith(self.faults.id):
+            return self.faults.handle_message(channel, msg)
+
     def _is_start_message(self, msg):
         """Return True if the message destined to start the activity."""
         return self.state == 'ready' and msg.name == 'start' \
@@ -336,6 +370,84 @@ class Sequence(FlowExpression):
     """A sequence activity."""
 
     allowed_child_types = _get_supported_activities()
+
+    def handle_message(self, channel, msg):
+        """Handle message."""
+
+        res = FlowExpression.handle_message(self, channel, msg) or \
+                self._was_activated(channel, msg) or \
+                self._was_sequence_completed(channel, msg) or \
+                self._was_consumed_by_child(channel, msg)
+        if res:
+            return res
+
+        return 'ignored'
+
+class Faults(FlowExpression):
+    """A faults flow expression."""
+
+    allowed_child_types = ("case", "default")
+    is_ctx_allowed = False
+
+    def handle_message(self, channel, msg):
+        """Handle message."""
+
+        res = ''
+        if self.state == 'active' and msg.name == 'fault' and \
+           msg.target == self.id:
+            self.state = 'aborted'
+            channel.send(Message(name='fault', target=self.parent_id,
+                                 origin=self.id, payload=msg.payload))
+            res = 'consumed'
+        if res:
+            return res
+
+        res = ''
+        if self._is_start_message(msg):
+            code = self.context.get('inst:fault')["code"]
+            default = None
+            for child in self.children:
+                if code in child.codes:
+                    channel.send(Message(name='start', target=child.id,
+                                         origin=self.id))
+                    self.state = 'active'
+                    res = "consumed"
+                    break
+                if not child.codes:
+                    default = child
+            else:
+                if not default is None:
+                    channel.send(Message(name='start', target=default.id,
+                                         origin=self.id))
+                    self.state = 'active'
+                    res = "consumed"
+                else:
+                    pass
+                    # TODO: throw fault again for the last time
+        if res:
+            return res
+
+        res =  self._was_consumed_by_child(channel, msg)
+        if res:
+            return res
+
+        return "ignored"
+
+class FaultCase(FlowExpression):
+    """A fault case expression."""
+
+    allowed_child_types = _get_supported_activities()
+    is_ctx_allowed = False
+    is_handler = True
+
+    def __init__(self, parent_id, element, fei, context):
+        """Constructor."""
+
+        FlowExpression.__init__(self, parent_id, element, fei, context)
+        self.codes = []
+        if element.tag == "case":
+            self.codes = [code.strip()
+                          for code in element.attrib["code"].split(',')]
 
     def handle_message(self, channel, msg):
         """Handle message."""
