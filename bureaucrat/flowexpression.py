@@ -497,27 +497,40 @@ class Action(FlowExpression):
         if self._is_start_message(msg):
             LOG.debug("Activate participant %s", self.participant)
             self.state = 'active'
-            channel.elaborate(self.participant, self.id,
-                              self.context.as_dictionary())
+            context = self.context.as_dictionary()
+            context["status"] = "done" # FIXME: consider setting status in task queue
+            channel.elaborate(self.participant, self.id, context)
             result = 'consumed'
         elif self.state == 'active' and msg.name == 'response':
             LOG.debug("Got response for action %s. Payload: %s",
                       self.id, msg.payload)
-            if 'error' in msg.payload:
-                LOG.debug("Got error: %s. Aborting...", msg.payload["error"])
-                self.state = 'aborting'
-                payload = {
-                    "code": "ActionError",
-                    "error": msg.payload["error"]
-                }
-                channel.send(Message(name='fault', origin=self.id,
-                                     target=self.parent_id, payload=payload))
+            if 'status' in msg.payload:
+                status = msg.payload["status"]
+                if status == 'critical':
+                    LOG.warning("Got critical error: %s. Aborting...",
+                                msg.payload["error"])
+                    self.state = 'aborting'
+                    payload = {
+                        "code": "ActionError",
+                        "error": msg.payload["error"]
+                    }
+                    channel.send(Message(name='fault', origin=self.id,
+                                         target=self.parent_id,
+                                         payload=payload))
+                elif status == 'error':
+                    LOG.error("Got recoverable error: %s. Suspending...",
+                              msg.payload["error"])
+                elif status == 'done':
+                    del msg.payload["status"]
+                    self.context.update(msg.payload)
+                    self.state = 'completed'
+                    # reply to parent that the child is done
+                    channel.send(Message(name='completed', origin=self.id,
+                                         target=self.parent_id))
+                else:
+                    LOG.error("Unknown status: %s", status)
             else:
-                self.context.update(msg.payload)
-                self.state = 'completed'
-                # reply to parent that the child is done
-                channel.send(Message(name='completed', origin=self.id,
-                                     target=self.parent_id))
+                LOG.error("No status received")
             result = 'consumed'
         else:
             LOG.debug("%r ignores %r", self, msg)

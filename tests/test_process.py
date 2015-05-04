@@ -73,7 +73,8 @@ class TestProcess(unittest.TestCase):
     def test_handle_message_response(self):
         """Test Process.handle_message() with response msg for child."""
 
-        msg = Message(name='response', target='fake-id_0', origin='fake-id_0')
+        msg = Message(name='response', target='fake-id_0', origin='fake-id_0',
+                      payload={"status": "done"})
         self.fexpr.state = 'active'
         self.fexpr.children[0].state = 'active'
         newmsg = Message(name='completed', target='fake-id',

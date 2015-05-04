@@ -47,7 +47,7 @@ class TestAll(unittest.TestCase):
         """Test All.handle_message() with response event."""
 
         msg = Message(name='response', target='fake-id_0_0',
-                      origin='fake-id_0_0')
+                      origin='fake-id_0_0', payload={"status": "done"})
         newmsg = Message(name='completed', target='fake-id_0',
                          origin='fake-id_0_0')
         self.fexpr.state = 'active'

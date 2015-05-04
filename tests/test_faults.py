@@ -140,6 +140,7 @@ class TestFaults(unittest.TestCase):
         self.ch.elaborate.assert_called_once_with("test2",
                                                   "fake-id_0_faults_2_0",
                                                   {
+                                                      'status': 'done',
                                                       'inst:fault': {
                                                           'message': 'Some error message',
                                                           'code': 'TestError'
