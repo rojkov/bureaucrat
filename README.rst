@@ -52,7 +52,11 @@ Supported activities
     Execution pauses until the task is completed. The task name must be
     specified in the attribute `participant`. In case the configured task queue
     is Celery the task name must be a fully qualified function name e.g.
-    `webhook_launcher.tasks.handle_webhook`.
+    `webhook_launcher.tasks.handle_webhook`. Every task is supposed to
+    report its `status` in the response message. If `status` is `done`
+    then the task is considered complete and the engine furthers execution.
+    In case `status` is set to `critical` then a fault is thrown in the current
+    context. All other statuses will be just reported in logs.
 
 `switch`
     a complex activity implementing conditional execution.
@@ -97,6 +101,72 @@ Supported activities
 
     Additionally the activity may be guarded with one or more `<condition>`
     child elements. Their syntax is the same as in the `switch` activity.
+
+`fault`
+    a simple activity throwing a fault into the current context. Optionally
+    the fault's code and message can be defined. Consider the following
+    example::
+
+        <process>
+            <context><property name="prop1" type="int">0</property></context>
+            <action participant="p1" />
+            <switch>
+                <case>
+                    <condition>context["prop1"] &gt; 0</context>
+                    <action participant="p3" />
+                </case>
+                <case>
+                    <condition>True</context>
+                    <fault code="CustomError" message="prop1 hasn't been incremented in the previous action" />
+                </case>
+            </switch>
+            <action participant="p3" />
+        </process>
+
+    If the participant `p1` doesn't increment the value of the property `prop1`
+    then the process will be aborted and the participant `p3` won't be
+    executed.
+
+    If a fault is thrown in a nested complex activity and there is no a
+    corresponding fault handler defined in the activity's context then the fault
+    will be propagated upward until the root expression is reached or a fault
+    handler defined in a outter context handles the fault.
+
+`assign`
+    a simple activity setting or updating a property's value in the current
+    context, e.g. in the following example the value of `prop1` will be set
+    to 8 when the `action` activity is reached::
+
+        <process>
+            <context>
+                <property name="prop1" type="int">0</property>
+                <property name="prop2" type="int">3</property>
+            </context>
+            <assign property="prop1">context["prop2"] + 5</assign>
+            <action participant="p1" />
+        </process>
+
+Additional expressions
+--------------------
+
+It is possible handle thrown faults with fault handlers defined in the
+context where the faults are thrown to::
+
+    <process>
+        <sequence>
+            <context>
+                <faults>
+                    <case code="SomeError, AnotherError">
+                        <action participant="some_error_cure" />
+                    </case>
+                    <default>
+                        <action participant="general_cure" />
+                    </default>
+                </faults>
+            </context>
+            <action participant="faulty_particpant" />
+        </sequence>
+    </process>
 
 .. important:: If you are going to use Celery make sure that Celery is
    configured to ignore task results and to resend workitems back to the
