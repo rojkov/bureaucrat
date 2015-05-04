@@ -898,7 +898,8 @@ class Assign(FlowExpression):
 
         FlowExpression.__init__(self, parent_id, element, fei, context)
         self.propname = element.attrib["property"]
-        self.expr = element.text
+        html_parser = HTMLParser()
+        self.expr = html_parser.unescape(element.text)
 
     def handle_message(self, channel, msg):
         """Handle msg."""
