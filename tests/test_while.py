@@ -10,6 +10,9 @@ from bureaucrat.message import Message
 processdsc_true = """<?xml version="1.0"?>
 <while>
     <condition>True</condition>
+    <context>
+        <property name="prop1" type="int">0</property>
+    </context>
     <action participant="test1" />
     <action participant="test2" />
 </while>
@@ -105,6 +108,7 @@ class TestWhileTrueCondition(TestWhile):
                       origin='fake-id_0_1')
         newmsg = Message(name='start', target='fake-id_0_0', origin='fake-id_0')
         self.fexpr.state = 'active'
+        self.fexpr.context.set('prop1', 5)
         with patch('bureaucrat.flowexpression.Message') as MockMessage:
             MockMessage.return_value = newmsg
             result = self.fexpr.handle_message(self.ch, msg)
@@ -114,6 +118,7 @@ class TestWhileTrueCondition(TestWhile):
                                                 target='fake-id_0_0',
                                                 origin='fake-id_0')
             self.ch.send.assert_called_once_with(newmsg)
+            self.assertEqual(self.fexpr.context.get('prop1'), 0)
 
 class TestWhileFalseCondition(TestWhile):
     """Tests for While with conditions evaluated to False."""

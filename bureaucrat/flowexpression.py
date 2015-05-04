@@ -732,6 +732,9 @@ class While(FlowExpression):
 
         self.conditions = []
         FlowExpression.__init__(self, parent_id, element, fei, context)
+        # these are needed to reset local context upon every iteration
+        self._parent_ctx = context
+        self._element = element
 
     def evaluate(self):
         """Check if conditions are met."""
@@ -749,20 +752,21 @@ class While(FlowExpression):
         """Handle message."""
 
         def restart():
+            self.context = Context(self._parent_ctx)
+            for child in self._element:
+                if child.tag == 'context':
+                    self.context.parse(child)
+                    break
             self.reset_children()
             channel.send(Message(name='start', target=self.children[0].id,
                                  origin=self.id))
 
-        res = FlowExpression.handle_message(self, channel, msg) or \
+        return FlowExpression.handle_message(self, channel, msg) or \
                 self._was_activated(channel, msg, self.evaluate) or \
                 self._was_sequence_completed(channel, msg,
                                              lambda: not self.evaluate(),
                                              restart) or \
-                self._was_consumed_by_child(channel, msg)
-        if res:
-            return res
-
-        return 'ignored'
+                self._was_consumed_by_child(channel, msg) or 'ignored'
 
 class All(FlowExpression):
     """All activity."""
