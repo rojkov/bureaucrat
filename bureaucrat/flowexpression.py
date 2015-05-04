@@ -22,7 +22,7 @@ def _get_supported_activities():
     """Return list of supported types of activities."""
     # TODO: calculate supported activities dynamically and cache
     return ('action', 'sequence', 'switch', 'while', 'all', 'call', 'delay',
-            'await', 'fault', 'assign')
+            'await', 'fault', 'assign', 'foreach')
 
 def _create_fe_from_element(parent_id, element, fei, context):
     """Create a flow expression instance from ElementTree.Element."""
@@ -53,6 +53,8 @@ def _create_fe_from_element(parent_id, element, fei, context):
         expr = Fault(parent_id, element, fei, context)
     elif tag == 'assign':
         expr = Assign(parent_id, element, fei, context)
+    elif tag == 'foreach':
+        expr = Foreach(parent_id, element, fei, context)
     else:
         raise FlowExpressionError("Unknown tag: %s" % tag)
     return expr
@@ -923,6 +925,64 @@ class Assign(FlowExpression):
             return 'consumed'
 
         return 'ignore'
+
+class Foreach(FlowExpression):
+    """Foreach activity."""
+
+    allowed_child_types = _get_supported_activities()
+    is_cond_allowed = True
+
+    def __init__(self, parent_id, element, fei, context):
+        """Constructor."""
+
+        FlowExpression.__init__(self, parent_id, element, fei, context)
+        # these are needed to reset local context upon every iteration
+        self._parent_ctx = context
+        self._element = element
+
+    def _activate(self, msg):
+        if self._is_start_message(msg):
+            selection = self._parent_ctx
+            for key in self._element.attrib["select"].split('.'):
+                selection = selection.get(key)
+            assert isinstance(selection, list), "%s is not list" % selection
+            self.context.set('inst:selection', selection)
+            self.context.set('inst:iteration', 1)
+            if len(selection) > 0:
+                self.context.set('inst:current', selection[0])
+
+    def handle_message(self, channel, msg):
+        """Handle message."""
+
+        def guard():
+            selection_size = len(self.context.get('inst:selection'))
+            if self.context.get('inst:iteration') < selection_size:
+                return True
+            else:
+                return False
+
+        def restart():
+            iteration = self.context.get('inst:iteration')
+            selection = self.context.get('inst:selection')
+            self.context = Context(self._parent_ctx)
+            for child in self._element:
+                if child.tag == 'context':
+                    self.context.parse(child)
+                    break
+            self.reset_children()
+            self.context.set('inst:iteration', iteration + 1)
+            self.context.set('inst:current', selection[iteration])
+            self.context.set('inst:selection', selection)
+            channel.send(Message(name='start', target=self.children[0].id,
+                                 origin=self.id))
+
+        return FlowExpression.handle_message(self, channel, msg) or \
+                self._activate(msg) or \
+                self._was_activated(channel, msg, guard) or \
+                self._was_sequence_completed(channel, msg,
+                                             lambda: not guard(),
+                                             restart) or \
+                self._was_consumed_by_child(channel, msg) or 'ignored'
 
 def test():
     LOG.info("Success")
