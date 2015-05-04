@@ -22,7 +22,7 @@ def _get_supported_activities():
     """Return list of supported types of activities."""
     # TODO: calculate supported activities dynamically and cache
     return ('action', 'sequence', 'switch', 'while', 'all', 'call', 'delay',
-            'await', 'fault')
+            'await', 'fault', 'assign')
 
 def _create_fe_from_element(parent_id, element, fei, context):
     """Create a flow expression instance from ElementTree.Element."""
@@ -51,6 +51,8 @@ def _create_fe_from_element(parent_id, element, fei, context):
         expr = Await(parent_id, element, fei, context)
     elif tag == 'fault':
         expr = Fault(parent_id, element, fei, context)
+    elif tag == 'assign':
+        expr = Assign(parent_id, element, fei, context)
     else:
         raise FlowExpressionError("Unknown tag: %s" % tag)
     return expr
@@ -882,6 +884,37 @@ class Fault(FlowExpression):
                                      "code": self.code,
                                      "message": self.message
                                  }))
+            return 'consumed'
+
+        return 'ignore'
+
+class Assign(FlowExpression):
+    """Assign activity."""
+
+    is_ctx_allowed = False
+
+    def __init__(self, parent_id, element, fei, context):
+        """Constructor."""
+
+        FlowExpression.__init__(self, parent_id, element, fei, context)
+        self.propname = element.attrib["property"]
+        self.expr = element.text
+
+    def handle_message(self, channel, msg):
+        """Handle msg."""
+
+        res = FlowExpression.handle_message(self, channel, msg)
+        if res:
+            return res
+
+        if self._is_start_message(msg):
+            self.context.set(self.propname,
+                             eval(self.expr, {
+                                 "context": self.context.as_dictionary()
+                             }))
+            self.state = 'completed'
+            channel.send(Message(name='completed', origin=self.id,
+                                 target=self.parent_id))
             return 'consumed'
 
         return 'ignore'
