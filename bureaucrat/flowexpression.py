@@ -22,7 +22,7 @@ def _get_supported_activities():
     """Return list of supported types of activities."""
     # TODO: calculate supported activities dynamically and cache
     return ('action', 'sequence', 'switch', 'while', 'all', 'call', 'delay',
-            'await')
+            'await', 'fault')
 
 def _create_fe_from_element(parent_id, element, fei, context):
     """Create a flow expression instance from ElementTree.Element."""
@@ -49,6 +49,8 @@ def _create_fe_from_element(parent_id, element, fei, context):
         expr = Delay(parent_id, element, fei, context)
     elif tag == 'await':
         expr = Await(parent_id, element, fei, context)
+    elif tag == 'fault':
+        expr = Fault(parent_id, element, fei, context)
     else:
         raise FlowExpressionError("Unknown tag: %s" % tag)
     return expr
@@ -847,6 +849,42 @@ class Call(FlowExpression):
             result = 'ignored'
 
         return result
+
+class Fault(FlowExpression):
+    """Fault activity."""
+
+    is_ctx_allowed = False
+
+    def __init__(self, parent_id, element, fei, context):
+        """Constructor."""
+
+        FlowExpression.__init__(self, parent_id, element, fei, context)
+        self.code = element.attrib.get("code", "terminate")
+        self.message = element.attrib.get("message", "")
+
+    def __str__(self):
+        """String representation."""
+        return "%s[code=%s]" % (self.id, self.code)
+
+    def handle_message(self, channel, msg):
+        """Handle msg."""
+
+        res = FlowExpression.handle_message(self, channel, msg)
+        if res:
+            return res
+
+        if self._is_start_message(msg):
+            LOG.debug("Throw fault '%s'", self.code)
+            self.state = 'completed'
+            channel.send(Message(name='fault', origin=self.id,
+                                 target=self.parent_id,
+                                 payload={
+                                     "code": self.code,
+                                     "message": self.message
+                                 }))
+            return 'consumed'
+
+        return 'ignore'
 
 def test():
     LOG.info("Success")
