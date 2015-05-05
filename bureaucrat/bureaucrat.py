@@ -128,9 +128,8 @@ class Bureaucrat(object):
         LOG.debug("Header: %r", header)
         LOG.debug("Handling message with Body: %r", body)
         try:
-            if header.content_type == Message.content_type:
-                msg = Message.loads(body)
-        except KeyError as err:
+            msg = Message.loads(body)
+        except (ValueError, KeyError) as err:
             # Report error and accept message
             LOG.error("%s", err)
             channel.basic_ack(method.delivery_tag)
