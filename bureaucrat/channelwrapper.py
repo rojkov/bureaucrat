@@ -82,8 +82,9 @@ class ChannelWrapper(object):
                 "taskset": None,
                 "chord": None
             }
-            self._ch.basic_publish(exchange='celery',
-                                   routing_key="celery",
+            name = participant.split(".", 1)[0]
+            self._ch.basic_publish(exchange=name,
+                                   routing_key=name,
                                    body=json.dumps(celery_msg),
                                    properties=pika.BasicProperties(
                                        delivery_mode=2,
